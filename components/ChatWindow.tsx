@@ -10,12 +10,14 @@ import { useAccent } from '@/lib/accent';
 import {
   Send, StopCircle, BookOpen, Loader2, Image as ImageIcon,
   ChevronDown, Paperclip, Download, Mic,
-  Copy, Check, Volume2, VolumeX,
+  Copy, Check, Volume2, VolumeX, GraduationCap, RotateCcw,
 } from 'lucide-react';
+import { ExamBlock, FlashcardBlock, MermaidBlock } from './StudyBlocks';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import { DocumentPanel } from './DocumentPanel';
+import { detectScriptLang, getBestVoice } from '@/lib/tts';
 
 interface Props {
   conversation: Conversation | null;
@@ -42,6 +44,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   const [uploadingFile, setUploadingFile] = useState(false);
   const [textareaFocused, setTextareaFocused] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [showStudy, setShowStudy] = useState(false);
 
   const convIdRef = useRef<string>(conversation?.id ?? crypto.randomUUID());
   const convCreatedAtRef = useRef<string>(conversation?.createdAt ?? new Date().toISOString());
@@ -49,6 +52,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   const abortRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
+  const studyPickerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
 
@@ -90,6 +94,9 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
     const handler = (e: MouseEvent) => {
       if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
         setShowModelPicker(false);
+      }
+      if (studyPickerRef.current && !studyPickerRef.current.contains(e.target as Node)) {
+        setShowStudy(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -283,6 +290,70 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
     [messages, isStreaming, modelId, provider, imageMode, persistConversation],
   );
 
+  const regenerate = useCallback(async () => {
+    if (isStreaming) return;
+    const base = messages[messages.length - 1]?.role === 'assistant'
+      ? messages.slice(0, -1)
+      : messages;
+    if (!base.length || base[base.length - 1].role !== 'user') return;
+
+    const assistantId = crypto.randomUUID();
+    const withAssistant: Message[] = [
+      ...base,
+      { id: assistantId, role: 'assistant', content: '', timestamp: new Date().toISOString() },
+    ];
+    setMessages(withAssistant);
+    setIsThinking(true);
+    setIsStreaming(true);
+    abortRef.current = new AbortController();
+
+    const update = (u: Partial<Message>) =>
+      setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, ...u } : m)));
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          modelId, provider,
+          messages: base.map((m) => ({ role: m.role, content: m.content })),
+        }),
+        signal: abortRef.current.signal,
+      });
+      if (!res.ok || !res.body) throw new Error((await res.text().catch(() => '')) || `HTTP ${res.status}`);
+      setIsThinking(false);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '', full = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n'); buf = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const d = line.slice(6);
+          if (d === '[DONE]') break;
+          try {
+            const p = JSON.parse(d);
+            if (p.error) { update({ content: `⚠️ ${p.error}` }); return; }
+            if (p.text) { full += p.text; update({ content: full }); }
+          } catch { /* skip */ }
+        }
+      }
+      persistConversation(
+        withAssistant.map((m) => (m.id === assistantId ? { ...m, content: full } : m)),
+        modelId,
+      );
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      update({ content: `⚠️ ${err instanceof Error ? err.message : 'Unknown error'}` });
+    } finally {
+      setIsThinking(false);
+      setIsStreaming(false);
+    }
+  }, [messages, isStreaming, modelId, provider, persistConversation]);
+
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = (e: React.DragEvent) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false);
@@ -343,8 +414,18 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
           <EmptyState model={model} theme={theme} onSend={sendMessage} />
         ) : (
           <div className="max-w-3xl mx-auto space-y-6">
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} modelIcon={model.icon} theme={theme} />
+            {messages.map((msg, i) => (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                modelIcon={model.icon}
+                theme={theme}
+                onRegenerate={
+                  msg.role === 'assistant' && i === messages.length - 1 && !isStreaming
+                    ? regenerate
+                    : undefined
+                }
+              />
             ))}
             {isThinking && (
               <div className="flex gap-3">
@@ -430,6 +511,59 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
               <BookOpen size={13} />
               <span>Docs{docCount > 0 ? ` (${docCount})` : ''}</span>
             </button>
+
+            {/* Study mode */}
+            <div className="relative" ref={studyPickerRef}>
+              <button
+                onClick={() => setShowStudy((v) => !v)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
+                style={showStudy ? {
+                  background: theme.imageActiveBg, color: theme.imageActiveColor,
+                  border: `1px solid ${theme.imageActiveBorder}`,
+                } : { background: 'var(--ui-bg-card)', color: 'var(--ui-text-3)', border: '1px solid transparent' }}
+                onMouseEnter={(e) => { if (!showStudy) e.currentTarget.style.background = 'var(--ui-bg-card-hover)'; }}
+                onMouseLeave={(e) => { if (!showStudy) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
+              >
+                <GraduationCap size={13} />
+                <span>Study</span>
+                <ChevronDown size={11} className={`transition-transform ${showStudy ? 'rotate-180' : ''}`} />
+              </button>
+              {showStudy && (
+                <div className="absolute bottom-full mb-2 left-0 rounded-xl border shadow-xl overflow-hidden min-w-48 z-20"
+                  style={{ background: 'var(--ui-bg-sidebar)', borderColor: 'var(--ui-border)' }}>
+                  {[
+                    { icon: '📝', label: 'Exam', desc: 'Interactive quiz with answers', prompt: 'Create an interactive exam with 5 multiple-choice questions about ' },
+                    { icon: '🃏', label: 'Flashcards', desc: 'Flip cards to practice', prompt: 'Create a flashcard deck to help me study ' },
+                    { icon: '🗺️', label: 'Mind Map', desc: 'Visual concept diagram', prompt: 'Draw a mind map diagram for ' },
+                    { icon: '📊', label: 'Flowchart', desc: 'Process / logic diagram', prompt: 'Create a flowchart diagram showing ' },
+                    { icon: '🔗', label: 'ER Diagram', desc: 'Entity-relationship diagram', prompt: 'Create an ER diagram for ' },
+                    { icon: '🔄', label: 'Sequence', desc: 'Sequence / interaction diagram', prompt: 'Create a sequence diagram for ' },
+                  ].map((item) => (
+                    <button
+                      key={item.label}
+                      onClick={() => {
+                        setInput(item.prompt);
+                        setShowStudy(false);
+                        requestAnimationFrame(() => {
+                          textareaRef.current?.focus();
+                          autoResize();
+                        });
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors"
+                      style={{ color: 'var(--ui-text-2)' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <span className="text-base">{item.icon}</span>
+                      <div>
+                        <p className="font-medium text-sm" style={{ color: 'var(--ui-text-1)' }}>{item.label}</p>
+                        <p className="text-xs" style={{ color: 'var(--ui-text-3)' }}>{item.desc}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {uploadingFile && (
               <div className="flex items-center gap-1.5 text-xs ml-auto" style={{ color: 'var(--ui-text-3)' }}>
@@ -521,13 +655,21 @@ function EmptyState({ model, theme, onSend }: { model: Model; theme: ProviderThe
   );
 }
 
-function MessageBubble({ message, modelIcon, theme }: { message: Message; modelIcon: string; theme: ProviderTheme }) {
+function MessageBubble({ message, modelIcon, theme, onRegenerate }: {
+  message: Message;
+  modelIcon: string;
+  theme: ProviderTheme;
+  onRegenerate?: () => void;
+}) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] border rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed"
-          style={{ background: theme.userBubbleBg, borderColor: theme.userBubbleBorder, color: 'var(--ui-text-1)' }}>
-          {message.content}
+        <div className="flex flex-col items-end gap-1">
+          <div className="max-w-[80%] border rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed"
+            style={{ background: theme.userBubbleBg, borderColor: theme.userBubbleBorder, color: 'var(--ui-text-1)' }}>
+            {message.content}
+          </div>
+          <UserCopyButton content={message.content} theme={theme} />
         </div>
       </div>
     );
@@ -548,16 +690,39 @@ function MessageBubble({ message, modelIcon, theme }: { message: Message; modelI
         {message.mediaType === 'image' && message.mediaUrl && (
           <GeneratedImage url={message.mediaUrl} theme={theme} />
         )}
-        {/* Copy + TTS actions (only when message is complete) */}
         {message.content && (
-          <MessageActions content={message.content} theme={theme} />
+          <MessageActions content={message.content} theme={theme} onRegenerate={onRegenerate} />
         )}
       </div>
     </div>
   );
 }
 
-function MessageActions({ content, theme }: { content: string; theme: ProviderTheme }) {
+function UserCopyButton({ content, theme }: { content: string; theme: ProviderTheme }) {
+  const [copied, setCopied] = useState(false);
+  const handle = async () => {
+    await navigator.clipboard.writeText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button onClick={handle}
+      className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors"
+      style={{ color: copied ? theme.primaryColor : 'var(--ui-text-3)' }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+    >
+      {copied ? <Check size={11} /> : <Copy size={11} />}
+      <span>{copied ? 'Copied' : 'Copy'}</span>
+    </button>
+  );
+}
+
+function MessageActions({ content, theme, onRegenerate }: {
+  content: string;
+  theme: ProviderTheme;
+  onRegenerate?: () => void;
+}) {
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -624,6 +789,18 @@ function MessageActions({ content, theme }: { content: string; theme: ProviderTh
         {copied ? <Check size={12} /> : <Copy size={12} />}
         <span>{copied ? 'Copied' : 'Copy'}</span>
       </button>
+      {onRegenerate && (
+        <button onClick={onRegenerate}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors"
+          style={{ color: 'var(--ui-text-3)' }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+          title="Regenerate response"
+        >
+          <RotateCcw size={12} />
+          <span>Redo</span>
+        </button>
+      )}
       <button onClick={handleSpeak}
         className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors"
         style={{ color: speaking ? theme.primaryColor : 'var(--ui-text-3)' }}
@@ -665,6 +842,10 @@ function MarkdownContent({ content, theme }: { content: string; theme: ProviderT
         code({ className, children, ...props }: any) {
           const lang = className?.replace('language-', '') ?? '';
           const raw = String(children).trimEnd();
+
+          if (lang === 'exam') return <ExamBlock raw={raw} theme={theme} />;
+          if (lang === 'flashcards') return <FlashcardBlock raw={raw} theme={theme} />;
+          if (lang === 'mermaid') return <MermaidBlock code={raw} />;
 
           if (['document', 'spreadsheet', 'slides', 'pdf'].includes(lang)) {
             return <FileBlock lang={lang as 'document' | 'spreadsheet' | 'slides' | 'pdf'} content={raw} theme={theme} />;
@@ -895,83 +1076,6 @@ async function downloadPDF(content: string, filename = 'document') {
   doc.save(`${filename}.pdf`);
 }
 
-/** Detect language from Unicode script ranges. Returns BCP-47 tag or '' for Latin scripts. */
-function detectScriptLang(text: string): string {
-  /* eslint-disable no-control-regex */
-  if (/[฀-๿]/.test(text)) return 'th-TH';   // Thai
-  if (/[぀-ゟ゠-ヿ]/.test(text)) return 'ja-JP'; // Japanese kana
-  if (/[一-鿿㐀-䶿]/.test(text)) return 'zh-CN'; // CJK
-  if (/[가-힣]/.test(text)) return 'ko-KR';   // Korean hangul
-  if (/[؀-ۿ]/.test(text)) return 'ar-SA';   // Arabic
-  if (/[ऀ-ॿ]/.test(text)) return 'hi-IN';   // Devanagari (Hindi)
-  if (/[Ѐ-ӿ]/.test(text)) return 'ru-RU';   // Cyrillic
-  if (/[Ͱ-Ͽ]/.test(text)) return 'el-GR';   // Greek
-  if (/[ঀ-৿]/.test(text)) return 'bn-BD';   // Bengali
-  if (/[஀-௿]/.test(text)) return 'ta-IN';   // Tamil
-  if (/[ಀ-೿]/.test(text)) return 'kn-IN';   // Kannada
-  if (/[ഀ-ൿ]/.test(text)) return 'ml-IN';   // Malayalam
-  if (/[਀-੿]/.test(text)) return 'pa-IN';   // Gurmukhi
-  if (/[઀-૿]/.test(text)) return 'gu-IN';   // Gujarati
-  if (/[଀-୿]/.test(text)) return 'or-IN';   // Odia
-  if (/[ༀ-࿿]/.test(text)) return 'bo-CN';   // Tibetan
-  if (/[֐-׿]/.test(text)) return 'he-IL';   // Hebrew
-  if (/[Ⴀ-ჿ]/.test(text)) return 'ka-GE';   // Georgian
-  if (/[԰-֏]/.test(text)) return 'hy-AM';   // Armenian
-  /* eslint-enable no-control-regex */
-  return '';
-}
-
-/**
- * Pick the most natural available voice for a language.
- * Ranking: Chrome Google online > premium > enhanced > other > compact.
- * Never returns null if ANY matching voice exists — compact is better than
- * the browser silently falling back to a random English voice.
- */
-function getBestVoice(lang: string, voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
-  if (!lang || voices.length === 0) return null;
-  const prefix = lang.split('-')[0];
-  const matching = voices.filter(
-    (v) => v.lang === lang || v.lang.startsWith(`${prefix}-`) || v.lang === prefix,
-  );
-  if (matching.length === 0) return null;
-
-  // Known pleasant female voice names across macOS / Windows / Chrome
-  const FEMALE_NAMES = [
-    'samantha', 'ava', 'allison', 'susan', 'karen', 'moira', 'fiona',
-    'tessa', 'veena', 'victoria', 'zira', 'hazel', 'aria', 'jenny',
-    'nova', 'shimmer', 'echo',
-  ];
-  // Robotic or male voices to deprioritise
-  const AVOID = ['fred', 'albert', 'bad news', 'bahh', 'bells', 'boing',
-    'bubbles', 'cellos', 'deranged', 'good news', 'hysterical',
-    'pipe organ', 'trinoids', 'whisper', 'zarvox'];
-
-  const score = (v: SpeechSynthesisVoice) => {
-    const n = v.name.toLowerCase();
-    const u = v.voiceURI.toLowerCase();
-
-    if (AVOID.some((x) => n.includes(x))) return -1;
-
-    let s = 0;
-    // Quality tier
-    if (n.startsWith('google') && v.localService === false) s += 60; // Chrome online
-    else if (n.startsWith('google')) s += 50;
-    else if (u.includes('premium')) s += 40;
-    else if (u.includes('enhanced')) s += 30;
-    else if (n.includes('siri')) s += 20;
-    else if (u.includes('compact')) s += 0;
-    else s += 10;
-
-    // Prefer female voices: +20 bonus
-    if (n.includes('female') || FEMALE_NAMES.some((f) => n.includes(f))) s += 20;
-    // Deprioritise explicitly male voices
-    if (n.includes('male') && !n.includes('female')) s -= 15;
-
-    return s;
-  };
-
-  return [...matching].sort((a, b) => score(b) - score(a))[0];
-}
 
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
