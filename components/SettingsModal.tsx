@@ -46,7 +46,14 @@ export function SettingsModal({ onClose }: Props) {
 
     const loadVoices = () => {
       const v = window.speechSynthesis?.getVoices() ?? [];
-      if (v.length > 0) setVoices(v);
+      if (v.length > 0) {
+        const seen = new Set<string>();
+        setVoices(v.filter((voice) => {
+          if (seen.has(voice.voiceURI)) return false;
+          seen.add(voice.voiceURI);
+          return true;
+        }));
+      }
     };
     loadVoices();
     window.speechSynthesis?.addEventListener('voiceschanged', loadVoices);
@@ -461,11 +468,11 @@ export function SettingsModal({ onClose }: Props) {
                           No voices found on this device.
                         </p>
                       ) : (
-                        voices.map((voice) => {
+                        voices.map((voice, i) => {
                           const active = selectedVoiceURI === voice.voiceURI;
                           return (
                             <button
-                              key={voice.voiceURI}
+                              key={`${voice.voiceURI}-${i}`}
                               onClick={() => handleVoiceSelect(voice.voiceURI)}
                               className="w-full flex items-center justify-between px-3 py-2 text-sm text-left border-b last:border-0 transition-colors"
                               style={{
