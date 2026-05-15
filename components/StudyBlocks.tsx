@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { ProviderTheme } from '@/lib/providerThemes';
 import { Shuffle, ChevronLeft, ChevronRight, RotateCcw, Download, Volume2, VolumeX } from 'lucide-react';
 import { detectScriptLang, getBestVoice } from '@/lib/tts';
@@ -430,57 +429,19 @@ function sanitizeMermaid(raw: string): string {
   return code;
 }
 
-function Snackbar({ onDismiss }: { onDismiss: () => void }) {
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setVisible(true));
-    const hide = setTimeout(() => setVisible(false), 4000);
-    const done = setTimeout(onDismiss, 4300);
-    return () => { cancelAnimationFrame(frame); clearTimeout(hide); clearTimeout(done); };
-  }, [onDismiss]);
-
-  if (typeof document === 'undefined') return null;
-
-  return createPortal(
-    <div style={{
-      position: 'fixed', bottom: 28, left: '50%',
-      transform: `translateX(-50%) translateY(${visible ? 0 : 12}px)`,
-      opacity: visible ? 1 : 0,
-      transition: 'opacity 0.25s ease, transform 0.25s ease',
-      zIndex: 9999,
-      background: '#1e1e2e',
-      border: '1px solid rgba(239,68,68,0.35)',
-      borderRadius: 10,
-      padding: '9px 14px',
-      display: 'flex', alignItems: 'center', gap: 10,
-      boxShadow: '0 4px 20px rgba(0,0,0,0.45)',
-      maxWidth: 420, pointerEvents: visible ? 'auto' : 'none',
-    }}>
-      <span style={{ fontSize: 13, color: '#f87171', flex: 1 }}>
-        Diagram could not be rendered — check syntax
-      </span>
-      <button
-        onClick={() => { setVisible(false); setTimeout(onDismiss, 300); }}
-        style={{ color: 'rgba(156,163,175,0.7)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 2 }}
-      >✕</button>
-    </div>,
-    document.body,
-  );
-}
-
 export function MermaidBlock({ code }: { code: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState('');
-  const [err, setErr] = useState('');
+  const [failed, setFailed] = useState(false);
   const idRef = useRef(`mmd-${Math.random().toString(36).slice(2, 9)}`);
 
   useEffect(() => {
     let cancelled = false;
-    setErr(''); setSvg('');
+    setFailed(false); setSvg('');
     import('mermaid').then(({ default: mermaid }) => {
       mermaid.initialize({
         startOnLoad: false,
+        suppressErrorRendering: true,
         theme: 'dark',
         themeVariables: {
           primaryColor: '#7C3AED',
@@ -500,8 +461,16 @@ export function MermaidBlock({ code }: { code: string }) {
         },
       });
       mermaid.render(idRef.current, sanitizeMermaid(code.trim()))
-        .then(({ svg: s }) => { if (!cancelled) setSvg(s); })
-        .catch((e: Error) => { if (!cancelled) setErr(String(e.message ?? e)); });
+        .then(({ svg: s }) => {
+          if (cancelled) return;
+          // Guard: Mermaid may still embed error text in the SVG on some versions
+          if (s.includes('Syntax error') || s.includes('mermaid-error-icon') || s.includes('#mermaid-error')) {
+            setFailed(true);
+          } else {
+            setSvg(s);
+          }
+        })
+        .catch(() => { if (!cancelled) setFailed(true); });
     });
     return () => { cancelled = true; };
   }, [code]);
@@ -531,12 +500,8 @@ export function MermaidBlock({ code }: { code: string }) {
           </button>
         )}
       </div>
-      {err && <Snackbar onDismiss={() => setErr('')} />}
-      {err ? (
-        <div className="p-8 flex flex-col items-center justify-center gap-2" style={{ background: '#0f0f1a', minHeight: '120px' }}>
-          <span style={{ fontSize: 24 }}>📊</span>
-          <span className="text-xs" style={{ color: 'var(--ui-text-3)' }}>Diagram unavailable</span>
-        </div>
+      {failed ? (
+        <div style={{ background: '#0f0f1a', minHeight: '80px' }} />
       ) : svg ? (
         <div ref={containerRef} className="p-4 overflow-x-auto flex items-center justify-center"
           style={{ background: '#0f0f1a', minHeight: '120px' }}

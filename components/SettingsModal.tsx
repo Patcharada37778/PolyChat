@@ -514,8 +514,8 @@ export function SettingsModal({ onClose }: Props) {
                     <p className="text-xs" style={{ color: 'var(--ui-text-3)' }}>
                       Current:{' '}
                       <span style={{ color: accentColor === 'rainbow' ? undefined : accentColor }}
-                        className={accentColor === 'rainbow' ? 'bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent' : ''}>
-                        {accentColor === 'rainbow' ? 'Rainbow' : accentColor}
+                        className={accentColor === 'rainbow' ? 'rainbow-text' : ''}>
+                        {accentColor === 'rainbow' ? 'Rainbow ✦' : accentColor}
                       </span>
                     </p>
                   </div>

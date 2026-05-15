@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, startTransition, memo } from 'react';
 import { useSession } from 'next-auth/react';
-import { Message } from '@/types';
+import { Message, Attachment } from '@/types';
 import { Model, models, getModel, Provider } from '@/lib/models';
 import { Conversation, saveConversation } from '@/lib/history';
 import { getProviderTheme, ProviderTheme } from '@/lib/providerThemes';
@@ -10,7 +10,7 @@ import { useAccent } from '@/lib/accent';
 import {
   Send, StopCircle, BookOpen, Loader2, Image as ImageIcon,
   ChevronDown, Paperclip, Download, Mic,
-  Copy, Check, Volume2, VolumeX, GraduationCap, RotateCcw,
+  Copy, Check, Volume2, VolumeX, GraduationCap, RotateCcw, X, FileText,
 } from 'lucide-react';
 import { ExamBlock, FlashcardBlock, MermaidBlock } from './StudyBlocks';
 import ReactMarkdown from 'react-markdown';
@@ -45,6 +45,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   const [textareaFocused, setTextareaFocused] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [showStudy, setShowStudy] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
 
   const convIdRef = useRef<string>(conversation?.id ?? crypto.randomUUID());
   const convCreatedAtRef = useRef<string>(conversation?.createdAt ?? new Date().toISOString());
@@ -53,6 +54,11 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const studyPickerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const autoScrollRef = useRef(true);
+  const programmaticScrollRef = useRef(false);
+  const isScrollActiveRef = useRef(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
 
@@ -74,9 +80,12 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
     setIsStreaming(false);
     setIsThinking(false);
     setImageMode(false);
+    setAttachments([]);
     window.speechSynthesis?.cancel();
     recognitionRef.current?.stop();
     setIsListening(false);
+    autoScrollRef.current = true;
+    setTimeout(scrollToBottom, 0);
   }, [conversation?.id]);
 
   useEffect(() => {
@@ -86,9 +95,35 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
     };
   }, []);
 
+  const scrollToBottom = useCallback(() => {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    programmaticScrollRef.current = true;
+    el.scrollTop = el.scrollHeight;
+    requestAnimationFrame(() => { programmaticScrollRef.current = false; });
+  }, []);
+
+  const msgCountRef = useRef(messages.length);
+
+  // Scroll when a new message is added (always) or when streaming is active and user is at bottom.
+  // isScrollActiveRef is set synchronously in finally before React batches setState, so by the
+  // time this effect fires for an error message the ref is already false — no spring.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const prevCount = msgCountRef.current;
+    msgCountRef.current = messages.length;
+    if (messages.length > prevCount || (autoScrollRef.current && isScrollActiveRef.current)) {
+      scrollToBottom();
+    }
+  }, [messages, scrollToBottom]);
+
+  const handleScrollArea = () => {
+    // Ignore scrolls that we triggered ourselves
+    if (programmaticScrollRef.current) return;
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    autoScrollRef.current = distFromBottom < 100;
+  };
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -168,12 +203,18 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
 
   const sendMessage = useCallback(
     async (content: string) => {
-      if (!content.trim() || isStreaming) return;
+      if ((!content.trim() && attachments.length === 0) || isStreaming) return;
 
+      autoScrollRef.current = true;
+      const pendingAttachments = attachments;
+      setAttachments([]);
+
+      const displayAtts = pendingAttachments.map(({ id, name, mimeType, preview }) => ({ id, name, mimeType, preview }));
       const userMsg: Message = {
         id: crypto.randomUUID(),
         role: 'user',
         content: content.trim(),
+        attachments: displayAtts.length > 0 ? displayAtts : undefined,
         timestamp: new Date().toISOString(),
       };
 
@@ -198,15 +239,26 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
 
       const showError = (msg: string) => updateAssistant({ content: `⚠️ ${msg}` });
 
-      const IMAGE_RE = /^(generate|create|draw|make|show|produce|paint|design)\s+(me\s+)?(a|an|the|some\s+)?(image|photo|picture|artwork|illustration|painting|drawing|portrait|landscape|wallpaper|avatar)\b/i;
-      const isImageRequest = imageMode || IMAGE_RE.test(content.trim());
+      // Route to image generation when a generation verb is at the start AND an image noun
+      // appears anywhere in the message. Splitting the two checks makes it resilient to
+      // any word order between the verb and the noun ("create a high-res image of…", etc.).
+      const IMAGE_VERB_RE = /^(generate|create|draw|make|produce|paint|design|render|sketch)\b/i;
+      const IMAGE_NOUN_RE = /\b(image|photo|picture|artwork|illustration|painting|portrait|landscape|wallpaper|avatar|headshot|photograph)\b/i;
+      const trimmed = content.trim();
+      const hasTextAttachment = pendingAttachments.some(a => a.isText);
+      const imageAtt = pendingAttachments.find(a => !a.isText && a.mimeType.startsWith('image/'));
+      const isImageRequest = (imageMode || (IMAGE_VERB_RE.test(trimmed) && IMAGE_NOUN_RE.test(trimmed))) && !hasTextAttachment;
 
       if (isImageRequest) {
         try {
           const res = await fetch('/api/generate/image', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: content.trim() }),
+            body: JSON.stringify({
+              prompt: content.trim(),
+              imageData: imageAtt?.data,
+              imageMimeType: imageAtt?.mimeType,
+            }),
             signal: abortRef.current.signal,
           });
           const data = await res.json();
@@ -238,6 +290,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
             modelId,
             provider,
             messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+            attachments: pendingAttachments,
           }),
           signal: abortRef.current.signal,
         });
@@ -248,6 +301,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
         }
 
         setIsThinking(false);
+        isScrollActiveRef.current = true;
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
@@ -269,7 +323,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
               if (parsed.error) { showError(parsed.error); return; }
               if (parsed.text) {
                 fullText += parsed.text;
-                updateAssistant({ content: fullText });
+                startTransition(() => updateAssistant({ content: fullText }));
               }
             } catch { /* skip malformed chunk */ }
           }
@@ -283,15 +337,17 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
         if (err instanceof Error && err.name === 'AbortError') return;
         showError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
+        isScrollActiveRef.current = false;
         setIsThinking(false);
         setIsStreaming(false);
       }
     },
-    [messages, isStreaming, modelId, provider, imageMode, persistConversation],
+    [messages, isStreaming, modelId, provider, imageMode, persistConversation, attachments],
   );
 
   const regenerate = useCallback(async () => {
     if (isStreaming) return;
+    autoScrollRef.current = true;
     const base = messages[messages.length - 1]?.role === 'assistant'
       ? messages.slice(0, -1)
       : messages;
@@ -322,6 +378,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
       });
       if (!res.ok || !res.body) throw new Error((await res.text().catch(() => '')) || `HTTP ${res.status}`);
       setIsThinking(false);
+      isScrollActiveRef.current = true;
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = '', full = '';
@@ -337,7 +394,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
           try {
             const p = JSON.parse(d);
             if (p.error) { update({ content: `⚠️ ${p.error}` }); return; }
-            if (p.text) { full += p.text; update({ content: full }); }
+            if (p.text) { full += p.text; startTransition(() => update({ content: full })); }
           } catch { /* skip */ }
         }
       }
@@ -349,10 +406,51 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
       if (err instanceof Error && err.name === 'AbortError') return;
       update({ content: `⚠️ ${err instanceof Error ? err.message : 'Unknown error'}` });
     } finally {
+      isScrollActiveRef.current = false;
       setIsThinking(false);
       setIsStreaming(false);
     }
   }, [messages, isStreaming, modelId, provider, persistConversation]);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    const TEXT_TYPES = ['text/', 'application/json', 'application/xml'];
+    const isTextFile = (f: File) =>
+      TEXT_TYPES.some(t => f.type.startsWith(t)) ||
+      /\.(txt|md|csv|json|xml|yaml|yml|ts|tsx|js|jsx|py|java|cpp|c|html|css|sh)$/i.test(f.name);
+
+    const newAtts: Attachment[] = await Promise.all(files.map(file =>
+      new Promise<Attachment>(resolve => {
+        const reader = new FileReader();
+        const id = crypto.randomUUID();
+        if (isTextFile(file)) {
+          reader.readAsText(file);
+          reader.onload = () => resolve({
+            id, name: file.name,
+            mimeType: file.type || 'text/plain',
+            data: reader.result as string,
+            isText: true,
+          });
+        } else {
+          reader.readAsDataURL(file);
+          reader.onload = () => {
+            const dataUrl = reader.result as string;
+            const base64 = dataUrl.split(',')[1];
+            resolve({
+              id, name: file.name,
+              mimeType: file.type,
+              data: base64,
+              preview: file.type.startsWith('image/') ? dataUrl : undefined,
+            });
+          };
+        }
+        reader.onerror = () => resolve({ id, name: file.name, mimeType: file.type });
+      })
+    ));
+    setAttachments(prev => [...prev, ...newAtts]);
+    e.target.value = '';
+  };
 
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = (e: React.DragEvent) => {
@@ -362,30 +460,32 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
-    setUploadingFile(true);
-    const form = new FormData();
-    form.append('file', file);
-    try {
-      const res = await fetch('/api/documents', { method: 'POST', body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Upload failed');
-      setDocCount((c) => c + 1);
-      setMessages((prev) => [...prev, {
-        id: crypto.randomUUID(), role: 'assistant',
-        content: `✅ Document **"${file.name}"** uploaded (${data.chunkCount} chunks). I'll use it as context for our conversation.`,
-        timestamp: new Date().toISOString(),
-      }]);
-    } catch (err) {
-      setMessages((prev) => [...prev, {
-        id: crypto.randomUUID(), role: 'assistant',
-        content: `⚠️ Failed to upload "${file.name}": ${err instanceof Error ? err.message : 'Upload failed'}`,
-        timestamp: new Date().toISOString(),
-      }]);
-    } finally {
-      setUploadingFile(false);
-    }
+    const files = Array.from(e.dataTransfer.files);
+    if (!files.length) return;
+
+    const TEXT_TYPES = ['text/', 'application/json', 'application/xml'];
+    const isTextFile = (f: File) =>
+      TEXT_TYPES.some(t => f.type.startsWith(t)) ||
+      /\.(txt|md|csv|json|xml|yaml|yml|ts|tsx|js|jsx|py|java|cpp|c|html|css|sh)$/i.test(f.name);
+
+    const newAtts: Attachment[] = await Promise.all(files.map(file =>
+      new Promise<Attachment>(resolve => {
+        const id = crypto.randomUUID();
+        const fr = new FileReader();
+        if (isTextFile(file)) {
+          fr.readAsText(file);
+          fr.onload = () => resolve({ id, name: file.name, mimeType: file.type || 'text/plain', data: fr.result as string, isText: true });
+        } else {
+          fr.readAsDataURL(file);
+          fr.onload = () => {
+            const dataUrl = fr.result as string;
+            resolve({ id, name: file.name, mimeType: file.type, data: dataUrl.split(',')[1], preview: file.type.startsWith('image/') ? dataUrl : undefined });
+          };
+        }
+        fr.onerror = () => resolve({ id, name: file.name, mimeType: file.type });
+      })
+    ));
+    setAttachments(prev => [...prev, ...newAtts]);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -409,7 +509,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
 
       {showDocs && <DocumentPanel onClose={() => setShowDocs(false)} onDocsChange={setDocCount} />}
 
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+      <div ref={scrollAreaRef} onScroll={handleScrollArea} className="flex-1 overflow-y-auto px-4 py-6">
         {isEmpty ? (
           <EmptyState model={model} theme={theme} onSend={sendMessage} />
         ) : (
@@ -434,9 +534,19 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
                   {model.icon}
                 </div>
                 <div className="flex items-center gap-1 pt-2">
-                  <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: theme.dotColor, animationDelay: '0ms' }} />
-                  <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: theme.dotColor, animationDelay: '150ms' }} />
-                  <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: theme.dotColor, animationDelay: '300ms' }} />
+                  {theme.isRainbow ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full animate-bounce rainbow-bg" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 rounded-full animate-bounce rainbow-bg" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 rounded-full animate-bounce rainbow-bg" style={{ animationDelay: '300ms' }} />
+                    </>
+                  ) : (
+                    <>
+                      <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: theme.dotColor, animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: theme.dotColor, animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: theme.dotColor, animationDelay: '300ms' }} />
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -572,9 +682,59 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
             )}
           </div>
 
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="*/*"
+            className="hidden"
+            onChange={handleFileSelect}
+          />
+
+          {/* Attachment previews */}
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-1">
+              {attachments.map(att => (
+                <div key={att.id} className="relative flex items-center gap-1.5 rounded-xl overflow-hidden border text-xs"
+                  style={{ background: 'var(--ui-bg-card)', borderColor: 'var(--ui-border)', maxWidth: 160 }}>
+                  {att.preview ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={att.preview} alt={att.name} className="w-10 h-10 object-cover shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 flex items-center justify-center shrink-0"
+                      style={{ background: 'var(--ui-bg-card-hover)' }}>
+                      <FileText size={16} style={{ color: 'var(--ui-text-3)' }} />
+                    </div>
+                  )}
+                  <span className="truncate pr-1 py-1" style={{ color: 'var(--ui-text-2)' }}>{att.name}</span>
+                  <button
+                    onClick={() => setAttachments(prev => prev.filter(a => a.id !== att.id))}
+                    className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full flex items-center justify-center"
+                    style={{ background: 'rgba(0,0,0,0.5)', color: '#fff' }}
+                  >
+                    <X size={9} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Input */}
           <div className="relative flex items-end gap-2 rounded-2xl p-3 transition-colors border"
             style={{ background: 'var(--ui-input-bg)', borderColor: textareaBorderColor }}>
+            {/* Attach file */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl transition-colors mb-0.5"
+              style={{ color: attachments.length > 0 ? theme.primaryColor : 'var(--ui-text-3)' }}
+              title="Attach file"
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              <Paperclip size={15} />
+            </button>
+
             <textarea
               ref={textareaRef}
               value={input}
@@ -582,7 +742,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
               onKeyDown={handleKeyDown}
               onFocus={() => setTextareaFocused(true)}
               onBlur={() => setTextareaFocused(false)}
-              placeholder={imageMode ? 'Describe the image you want…' : isListening ? 'Listening…' : `Message ${model.name}…`}
+              placeholder={imageMode ? 'Describe the image you want…' : isListening ? 'Listening…' : attachments.length > 0 ? `Add a message or just send ${attachments.length} file(s)…` : `Message ${model.name}…`}
               rows={1}
               className="flex-1 bg-transparent placeholder-gray-500 resize-none outline-none text-sm leading-relaxed max-h-48 py-1"
               style={{ color: 'var(--ui-text-1)' }}
@@ -610,11 +770,11 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
             ) : (
               <button
                 onClick={() => sendMessage(input)}
-                disabled={!input.trim()}
-                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors mb-0.5"
-                style={{ background: theme.primaryColor }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = theme.primaryHover; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = theme.primaryColor; }}
+                disabled={!input.trim() && attachments.length === 0}
+                className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-xl disabled:opacity-30 disabled:cursor-not-allowed text-white mb-0.5${theme.isRainbow ? ' rainbow-bg' : ' transition-colors'}`}
+                style={theme.isRainbow ? {} : { background: theme.primaryColor }}
+                onMouseEnter={(e) => { if (!theme.isRainbow) e.currentTarget.style.background = theme.primaryHover; }}
+                onMouseLeave={(e) => { if (!theme.isRainbow) e.currentTarget.style.background = theme.primaryColor; }}
               >
                 <Send size={14} />
               </button>
@@ -664,11 +824,32 @@ function MessageBubble({ message, modelIcon, theme, onRegenerate }: {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="flex flex-col items-end gap-1">
-          <div className="max-w-[80%] border rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed"
-            style={{ background: theme.userBubbleBg, borderColor: theme.userBubbleBorder, color: 'var(--ui-text-1)' }}>
-            {message.content}
-          </div>
+        <div className="flex flex-col items-end gap-1" style={{ maxWidth: '80%' }}>
+          {/* Attachment thumbnails */}
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="flex flex-wrap justify-end gap-2">
+              {message.attachments.map(att =>
+                att.preview ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img key={att.id} src={att.preview} alt={att.name}
+                    className="rounded-xl max-h-48 max-w-[260px] object-cover border"
+                    style={{ borderColor: theme.userBubbleBorder }} />
+                ) : (
+                  <div key={att.id} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs border"
+                    style={{ background: theme.userBubbleBg, borderColor: theme.userBubbleBorder, color: 'var(--ui-text-2)' }}>
+                    <FileText size={12} />
+                    <span>{att.name}</span>
+                  </div>
+                )
+              )}
+            </div>
+          )}
+          {message.content && (
+            <div className="border rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed w-full"
+              style={{ background: theme.userBubbleBg, borderColor: theme.userBubbleBorder, color: 'var(--ui-text-1)' }}>
+              {message.content}
+            </div>
+          )}
           <UserCopyButton content={message.content} theme={theme} />
         </div>
       </div>

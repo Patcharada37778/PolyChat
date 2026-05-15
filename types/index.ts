@@ -1,9 +1,19 @@
+export interface Attachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  data?: string;     // base64 for binary; plain text for text files
+  isText?: boolean;  // true when data is plain text
+  preview?: string;  // data URL, only present for images
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   mediaUrl?: string;
   mediaType?: 'image';
+  attachments?: Omit<Attachment, 'data' | 'isText'>[];
   timestamp: string;
 }
 

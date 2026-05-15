@@ -31,12 +31,36 @@ export interface ProviderTheme {
   downloadBtnColor: string;
   blockquoteBorder: string;
   codeColor: string;
+  isRainbow?: boolean;
 }
 
 /** Returns the provider theme, overriding all primary colors with the accent hex when provided. */
 export function getProviderTheme(provider: Provider, accentHex?: string | null): ProviderTheme {
   const base = providerThemes[provider];
-  if (!accentHex || !accentHex.startsWith('#')) return base;
+  if (!accentHex || !accentHex.startsWith('#')) {
+    // Rainbow mode — gradient is applied via CSS class; provide tint colors here
+    return {
+      ...base,
+      isRainbow: true,
+      primaryColor: '#ffffff',
+      primaryHover: '#ffffff',
+      chatBgTint:        'rgba(255,170,0,0.06)',
+      userBubbleBg:      'rgba(180,80,255,0.13)',
+      userBubbleBorder:  'rgba(255,100,180,0.25)',
+      dotColor:          '#f59e0b',
+      textareaBorderFocus: 'rgba(255,100,0,0.35)',
+      imageActiveBg:     'rgba(255,120,0,0.12)',
+      imageActiveBorder: 'rgba(255,160,60,0.28)',
+      imageActiveColor:  '#fbbf24',
+      docsActiveBg:      'rgba(0,180,255,0.10)',
+      docsActiveColor:   '#38bdf8',
+      railRing:          'rgba(255,100,0,0.35)',
+      downloadBtnBg:     'rgba(255,120,0,0.12)',
+      downloadBtnColor:  '#fbbf24',
+      blockquoteBorder:  '#f59e0b',
+      codeColor:         '#fbbf24',
+    };
+  }
   const rgb = hexToRgb(accentHex);
   if (!rgb) return base;
   return {

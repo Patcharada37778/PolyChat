@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     apiKey: process.env.QWEN_API_KEY || 'placeholder',
   });
 
-  const { messages, modelId, provider = 'gemini' } = await req.json();
+  const { messages, modelId, provider = 'gemini', attachments = [] } = await req.json();
   const model = getModel(modelId ?? 'fast');
   const lastMessage = messages[messages.length - 1];
 
@@ -58,11 +58,11 @@ export async function POST(req: Request) {
     async start(controller) {
       try {
         if (provider === 'deepseek') {
-          await streamOpenAICompat(controller, deepseekClient, messages, systemInstruction, actualModel, model.maxTokens);
+          await streamOpenAICompat(controller, deepseekClient, messages, systemInstruction, actualModel, model.maxTokens, attachments, false);
         } else if (provider === 'qwen') {
-          await streamOpenAICompat(controller, qwenClient, messages, systemInstruction, actualModel, model.maxTokens);
+          await streamOpenAICompat(controller, qwenClient, messages, systemInstruction, actualModel, model.maxTokens, attachments, false);
         } else {
-          await streamGemini(controller, genAI, messages, systemInstruction, actualModel, model.maxTokens);
+          await streamGemini(controller, genAI, messages, systemInstruction, actualModel, model.maxTokens, attachments);
         }
         controller.enqueue(sseDone());
         controller.close();
@@ -86,6 +86,8 @@ async function streamGemini(
   systemInstruction: string,
   modelName: string,
   maxTokens: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  attachments: any[] = [],
 ) {
   const history = messages
     .slice(0, -1)
@@ -105,7 +107,24 @@ async function streamGemini(
     generationConfig: { maxOutputTokens: maxTokens },
   });
   const chat = gemini.startChat({ history });
-  const result = await chat.sendMessageStream(lastMessage.content);
+
+  // Build multimodal parts for the last message
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parts: any[] = [];
+  let textContent = lastMessage.content || '...';
+  for (const att of attachments) {
+    if (att.isText) {
+      textContent += `\n\n[Attached file: ${att.name}]\n${att.data}`;
+    }
+  }
+  parts.push({ text: textContent });
+  for (const att of attachments) {
+    if (!att.isText && att.data) {
+      parts.push({ inlineData: { mimeType: att.mimeType, data: att.data } });
+    }
+  }
+
+  const result = await chat.sendMessageStream(parts.length === 1 ? parts[0].text : parts);
   for await (const chunk of result.stream) {
     const text = chunk.text();
     if (text) controller.enqueue(sse(text));
@@ -119,6 +138,9 @@ async function streamOpenAICompat(
   systemInstruction: string,
   modelName: string,
   maxTokens: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  attachments: any[] = [],
+  supportsVision = false,
 ) {
   const history = messages
     .slice(0, -1)
@@ -133,10 +155,35 @@ async function streamOpenAICompat(
 
   const lastMessage = messages[messages.length - 1];
 
+  // Build last user content — text files appended inline, images as image_url only when supported
+  let textExtra = '';
+  const imageParts: OpenAI.Chat.ChatCompletionContentPart[] = [];
+  for (const att of attachments) {
+    if (att.isText) {
+      textExtra += `\n\n[Attached file: ${att.name}]\n${att.data}`;
+    } else if (att.mimeType?.startsWith('image/') && att.data) {
+      if (supportsVision) {
+        imageParts.push({
+          type: 'image_url',
+          image_url: { url: `data:${att.mimeType};base64,${att.data}` },
+        });
+      } else {
+        textExtra += `\n\n[Image attached: ${att.name}]`;
+      }
+    } else if (att.name) {
+      textExtra += `\n\n[Attached file: ${att.name}]`;
+    }
+  }
+
+  const lastUserContent: OpenAI.Chat.ChatCompletionMessageParam['content'] =
+    imageParts.length > 0
+      ? [{ type: 'text', text: (lastMessage.content || '') + textExtra }, ...imageParts]
+      : (lastMessage.content || '') + textExtra;
+
   const chatMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemInstruction },
     ...history,
-    { role: 'user', content: lastMessage.content },
+    { role: 'user', content: lastUserContent },
   ];
 
   const stream = await client.chat.completions.create({
