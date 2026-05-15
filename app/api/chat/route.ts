@@ -6,14 +6,14 @@ import { authOptions } from '@/lib/auth';
 import { getModel, providerModelMap, Provider } from '@/lib/models';
 import { retrieve, getDocs } from '@/lib/rag';
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
 const deepseekClient = new OpenAI({
   baseURL: 'https://api.deepseek.com',
-  apiKey: process.env.DEEPSEEK_API_KEY!,
+  apiKey: process.env.DEEPSEEK_API_KEY || 'not-configured',
 });
 const qwenClient = new OpenAI({
   baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  apiKey: process.env.QWEN_API_KEY!,
+  apiKey: process.env.QWEN_API_KEY || 'not-configured',
 });
 
 const encoder = new TextEncoder();
