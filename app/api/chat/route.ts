@@ -11,6 +11,10 @@ const deepseekClient = new OpenAI({
   baseURL: 'https://api.deepseek.com',
   apiKey: process.env.DEEPSEEK_API_KEY!,
 });
+const qwenClient = new OpenAI({
+  baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  apiKey: process.env.QWEN_API_KEY!,
+});
 
 const encoder = new TextEncoder();
 
@@ -54,7 +58,9 @@ export async function POST(req: Request) {
     async start(controller) {
       try {
         if (provider === 'deepseek') {
-          await streamDeepSeek(controller, messages, systemInstruction, actualModel, model.maxTokens);
+          await streamOpenAICompat(controller, deepseekClient, messages, systemInstruction, actualModel, model.maxTokens);
+        } else if (provider === 'qwen') {
+          await streamOpenAICompat(controller, qwenClient, messages, systemInstruction, actualModel, model.maxTokens);
         } else {
           await streamGemini(controller, messages, systemInstruction, actualModel, model.maxTokens);
         }
@@ -105,8 +111,9 @@ async function streamGemini(
   }
 }
 
-async function streamDeepSeek(
+async function streamOpenAICompat(
   controller: ReadableStreamDefaultController,
+  client: OpenAI,
   messages: { role: string; content: string }[],
   systemInstruction: string,
   modelName: string,
@@ -131,7 +138,7 @@ async function streamDeepSeek(
     { role: 'user', content: lastMessage.content },
   ];
 
-  const stream = await deepseekClient.chat.completions.create({
+  const stream = await client.chat.completions.create({
     model: modelName,
     messages: chatMessages,
     stream: true,

@@ -7,7 +7,7 @@ import { Model, models, getModel, Provider } from '@/lib/models';
 import { Conversation, saveConversation } from '@/lib/history';
 import { providerThemes, ProviderTheme } from '@/lib/providerThemes';
 import {
-  Send, StopCircle, BookOpen, Loader2, Image as ImageIcon,
+  Send, StopCircle, BookOpen, Loader2,
   ChevronDown, Paperclip, Download,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -29,7 +29,6 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
-  const [imageMode, setImageMode] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showDocs, setShowDocs] = useState(false);
   const [docCount, setDocCount] = useState(0);
@@ -61,7 +60,6 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
     setInput('');
     setIsStreaming(false);
     setIsThinking(false);
-    setImageMode(false);
   }, [conversation?.id]);
 
   useEffect(() => {
@@ -144,7 +142,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
       const showError = (msg: string) => updateAssistant({ content: `⚠️ ${msg}` });
 
       const IMAGE_RE = /^(generate|create|draw|make|show|produce|paint|design)\s+(me\s+)?(a|an|the|some\s+)?(image|photo|picture|artwork|illustration|painting|drawing|portrait|landscape|wallpaper|avatar)\b/i;
-      const isImageRequest = imageMode || IMAGE_RE.test(content.trim());
+      const isImageRequest = IMAGE_RE.test(content.trim());
 
       if (isImageRequest) {
         try {
@@ -232,7 +230,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
         setIsStreaming(false);
       }
     },
-    [messages, isStreaming, modelId, provider, imageMode, persistConversation],
+    [messages, isStreaming, modelId, provider, persistConversation],
   );
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -292,11 +290,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
 
   const isEmpty = messages.length === 0;
 
-  const textareaBorderColor = textareaFocused
-    ? theme.textareaBorderFocus
-    : imageMode
-      ? theme.imageActiveBorder
-      : 'var(--ui-input-border)';
+  const textareaBorderColor = textareaFocused ? theme.textareaBorderFocus : 'var(--ui-input-border)';
 
   return (
     <div
@@ -394,26 +388,6 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
               )}
             </div>
 
-            {/* Image mode toggle */}
-            <button
-              onClick={() => setImageMode((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
-              style={imageMode ? {
-                background: theme.imageActiveBg,
-                color: theme.imageActiveColor,
-                border: `1px solid ${theme.imageActiveBorder}`,
-              } : {
-                background: 'var(--ui-bg-card)',
-                color: 'var(--ui-text-3)',
-                border: '1px solid transparent',
-              }}
-              onMouseEnter={(e) => { if (!imageMode) e.currentTarget.style.background = 'var(--ui-bg-card-hover)'; }}
-              onMouseLeave={(e) => { if (!imageMode) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
-            >
-              <ImageIcon size={13} />
-              <span>Image</span>
-            </button>
-
             {/* Docs toggle */}
             <button
               onClick={() => setShowDocs(true)}
@@ -455,7 +429,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
               onKeyDown={handleKeyDown}
               onFocus={() => setTextareaFocused(true)}
               onBlur={() => setTextareaFocused(false)}
-              placeholder={imageMode ? 'Describe the image you want…' : `Message ${model.name}…`}
+              placeholder={`Message ${model.name}…`}
               rows={1}
               className="flex-1 bg-transparent placeholder-gray-500 resize-none outline-none text-sm leading-relaxed max-h-48 py-1"
               style={{ color: 'var(--ui-text-1)' }}

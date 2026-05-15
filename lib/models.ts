@@ -20,7 +20,7 @@ export interface ProviderInfo {
 export const providerList: ProviderInfo[] = [
   { id: 'gemini',   name: 'Gemini',   available: true  },
   { id: 'deepseek', name: 'DeepSeek', available: true  },
-  { id: 'qwen',     name: 'Qwen',     available: false },
+  { id: 'qwen',     name: 'Qwen',     available: true  },
 ];
 
 // Which underlying model to call for each provider + tier

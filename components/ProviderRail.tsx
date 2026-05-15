@@ -32,10 +32,9 @@ export function ProviderRail({ active, onSelect }: Props) {
       />
       <ProviderBtn
         id="qwen"
-        label="Qwen — coming soon"
-        active={false}
-        disabled
-        onClick={() => {}}
+        label="Qwen"
+        active={active === 'qwen'}
+        onClick={() => onSelect('qwen')}
         logo={<QwenLogo />}
         activeRing={providerThemes.qwen.railRing}
       />
