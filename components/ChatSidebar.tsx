@@ -198,8 +198,11 @@ export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
 
               {showSettings && (
                 <div
-                  className="absolute bottom-full right-0 mb-2 w-44 rounded-xl border shadow-xl overflow-hidden z-40"
-                  style={{ background: 'var(--ui-bg-sidebar)', borderColor: 'var(--ui-border)' }}
+                  className="absolute bottom-full right-0 mb-2 w-44 rounded-xl overflow-hidden z-40"
+                  style={{
+                    background: 'var(--ui-bg-sidebar)',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+                  }}
                 >
                   <div className="p-1">
                     <button
@@ -209,8 +212,8 @@ export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
                       onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
-                      <span>{isDark ? 'Dark mode' : 'Light mode'}</span>
-                      {isDark ? <Moon size={14} /> : <Sun size={14} />}
+                      <span>{isDark ? 'Light mode' : 'Dark mode'}</span>
+                      {isDark ? <Sun size={14} /> : <Moon size={14} />}
                     </button>
                     <div className="h-px mx-2 my-1" style={{ background: 'var(--ui-border)' }} />
                     <button
