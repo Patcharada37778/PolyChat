@@ -1,6 +1,7 @@
 'use client';
 
 import { Provider } from '@/lib/models';
+import { providerThemes } from '@/lib/providerThemes';
 
 interface Props {
   active: Provider;
@@ -9,13 +10,17 @@ interface Props {
 
 export function ProviderRail({ active, onSelect }: Props) {
   return (
-    <div className="w-[52px] bg-[#090909] border-r border-white/5 flex flex-col items-center pt-[18px] gap-1.5 shrink-0">
+    <div
+      className="w-[52px] flex flex-col items-center pt-[18px] gap-1.5 shrink-0 border-r"
+      style={{ background: 'var(--ui-bg-rail)', borderColor: 'var(--ui-border)' }}
+    >
       <ProviderBtn
         id="gemini"
         label="Gemini"
         active={active === 'gemini'}
         onClick={() => onSelect('gemini')}
         logo={<GeminiLogo />}
+        activeRing={providerThemes.gemini.railRing}
       />
       <ProviderBtn
         id="deepseek"
@@ -23,6 +28,7 @@ export function ProviderRail({ active, onSelect }: Props) {
         active={active === 'deepseek'}
         onClick={() => onSelect('deepseek')}
         logo={<DeepSeekLogo />}
+        activeRing={providerThemes.deepseek.railRing}
       />
       <ProviderBtn
         id="qwen"
@@ -31,6 +37,7 @@ export function ProviderRail({ active, onSelect }: Props) {
         disabled
         onClick={() => {}}
         logo={<QwenLogo />}
+        activeRing={providerThemes.qwen.railRing}
       />
     </div>
   );
@@ -42,6 +49,7 @@ function ProviderBtn({
   disabled,
   onClick,
   logo,
+  activeRing,
 }: {
   id: string;
   label: string;
@@ -49,24 +57,30 @@ function ProviderBtn({
   disabled?: boolean;
   onClick: () => void;
   logo: React.ReactNode;
+  activeRing: string;
 }) {
   return (
     <div className="relative group">
       <button
         onClick={onClick}
         disabled={disabled}
-        className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all
-          ${active
-            ? 'bg-white/15 ring-1 ring-white/20 shadow-md'
-            : disabled
-              ? 'opacity-30 cursor-not-allowed'
-              : 'hover:bg-white/8 opacity-60 hover:opacity-100'
-          }`}
+        className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+          disabled ? 'opacity-30 cursor-not-allowed' : active ? '' : 'opacity-60 hover:opacity-100'
+        }`}
+        style={active ? {
+          background: 'var(--ui-bg-card-hover)',
+          boxShadow: `0 0 0 1.5px ${activeRing}`,
+        } : {}}
+        onMouseEnter={(e) => { if (!active && !disabled) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
+        onMouseLeave={(e) => { if (!active && !disabled) e.currentTarget.style.background = 'transparent'; }}
       >
         {logo}
       </button>
       {/* Tooltip */}
-      <div className="pointer-events-none absolute left-full ml-2.5 top-1/2 -translate-y-1/2 px-2 py-1 rounded-lg bg-[#1e1e1e] border border-white/10 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-50">
+      <div
+        className="pointer-events-none absolute left-full ml-2.5 top-1/2 -translate-y-1/2 px-2 py-1 rounded-lg border text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-50"
+        style={{ background: 'var(--ui-bg-card-hover)', borderColor: 'var(--ui-border)', color: 'var(--ui-text-1)' }}
+      >
         {label}
       </div>
     </div>
@@ -97,16 +111,12 @@ function DeepSeekLogo() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
       <circle cx="12" cy="12" r="11" fill="#0C1E3A" />
-      {/* body */}
       <path
         d="M5.5 13.5 C5.5 10.5 8.5 8.5 12 8.5 C15 8.5 17 10 18 12 C16.5 14.5 14.5 15.5 12 15.5 C9.5 15.5 7 14.5 5.5 13.5 Z"
         fill="#4D9FFF"
       />
-      {/* tail */}
       <path d="M5.5 13.5 C4 12 3 13.5 2.5 15 C4 14.5 5 14.5 5.5 13.5 Z" fill="#4D9FFF" />
-      {/* dorsal fin */}
       <path d="M12 8.5 C12.5 6.5 14 6 15 7 C14 7.5 13 8 12 8.5 Z" fill="#6BB5FF" />
-      {/* eye */}
       <circle cx="14.5" cy="11" r="1" fill="white" />
       <circle cx="14.8" cy="10.7" r="0.45" fill="#0C1E3A" />
     </svg>
@@ -124,9 +134,7 @@ function QwenLogo() {
         </linearGradient>
       </defs>
       <circle cx="12" cy="12" r="10.5" fill="url(#qwen-g)" />
-      {/* Q letter */}
       <circle cx="12" cy="11.5" r="4.5" stroke="white" strokeWidth="2" fill="none" />
-      {/* Q tail */}
       <line x1="15" y1="14" x2="18" y2="17" stroke="white" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );

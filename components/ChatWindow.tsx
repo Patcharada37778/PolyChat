@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import { Message } from '@/types';
 import { Model, models, getModel, Provider } from '@/lib/models';
 import { Conversation, saveConversation } from '@/lib/history';
+import { providerThemes, ProviderTheme } from '@/lib/providerThemes';
 import {
   Send, StopCircle, BookOpen, Loader2, Image as ImageIcon,
   ChevronDown, Paperclip, Download,
@@ -18,6 +20,10 @@ interface Props {
 }
 
 export function ChatWindow({ conversation, provider, onConversationUpdate }: Props) {
+  const { data: session } = useSession();
+  const userId = session?.user?.email ?? '';
+  const theme = providerThemes[provider];
+
   const [messages, setMessages] = useState<Message[]>(conversation?.messages ?? []);
   const [modelId, setModelId] = useState<'fast' | 'balanced' | 'pro'>(conversation?.modelId ?? 'fast');
   const [input, setInput] = useState('');
@@ -29,6 +35,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   const [docCount, setDocCount] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [textareaFocused, setTextareaFocused] = useState(false);
 
   const convIdRef = useRef<string>(conversation?.id ?? crypto.randomUUID());
   const convCreatedAtRef = useRef<string>(conversation?.createdAt ?? new Date().toISOString());
@@ -97,11 +104,11 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
         createdAt: convCreatedAtRef.current,
         updatedAt: now,
       };
-      saveConversation(conv);
+      saveConversation(conv, userId);
       window.dispatchEvent(new Event('polychat:history'));
       onConversationUpdate(conv);
     },
-    [onConversationUpdate, provider],
+    [onConversationUpdate, provider, userId],
   );
 
   const sendMessage = useCallback(
@@ -285,6 +292,12 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
 
   const isEmpty = messages.length === 0;
 
+  const textareaBorderColor = textareaFocused
+    ? theme.textareaBorderFocus
+    : imageMode
+      ? theme.imageActiveBorder
+      : 'var(--ui-input-border)';
+
   return (
     <div
       className="flex flex-col h-full relative"
@@ -293,8 +306,14 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
       onDrop={handleDrop}
     >
       {isDragging && (
-        <div className="absolute inset-0 z-50 bg-purple-500/10 border-2 border-dashed border-purple-500/50 rounded-lg pointer-events-none flex items-center justify-center">
-          <div className="flex flex-col items-center gap-2 text-purple-400">
+        <div
+          className="absolute inset-0 z-50 border-2 border-dashed rounded-lg pointer-events-none flex items-center justify-center"
+          style={{
+            background: `${theme.primaryColor}18`,
+            borderColor: `${theme.primaryColor}80`,
+          }}
+        >
+          <div className="flex flex-col items-center gap-2" style={{ color: theme.dotColor }}>
             <Paperclip size={32} />
             <span className="text-lg font-medium">Drop file to upload</span>
           </div>
@@ -307,21 +326,24 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
 
       <div className="flex-1 overflow-y-auto px-4 py-6">
         {isEmpty ? (
-          <EmptyState model={model} onSend={sendMessage} />
+          <EmptyState model={model} theme={theme} onSend={sendMessage} />
         ) : (
           <div className="max-w-3xl mx-auto space-y-6">
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} modelIcon={model.icon} />
+              <MessageBubble key={msg.id} message={msg} modelIcon={model.icon} theme={theme} />
             ))}
             {isThinking && (
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-sm shrink-0">
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0"
+                  style={{ background: 'var(--ui-bg-card)' }}
+                >
                   {model.icon}
                 </div>
                 <div className="flex items-center gap-1 pt-2">
-                  <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: theme.dotColor, animationDelay: '0ms' }} />
+                  <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: theme.dotColor, animationDelay: '150ms' }} />
+                  <span className="w-2 h-2 rounded-full animate-bounce" style={{ background: theme.dotColor, animationDelay: '300ms' }} />
                 </div>
               </div>
             )}
@@ -333,82 +355,110 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
       <div className="px-4 pb-4 shrink-0">
         <div className="max-w-3xl mx-auto space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Model picker */}
             <div className="relative" ref={modelPickerRef}>
               <button
                 onClick={() => setShowModelPicker((v) => !v)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-sm transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
+                style={{ background: 'var(--ui-bg-card)', color: 'var(--ui-text-2)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card-hover)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
               >
                 <span>{model.icon}</span>
                 <span>{model.name}</span>
                 <ChevronDown size={13} className={`transition-transform ${showModelPicker ? 'rotate-180' : ''}`} />
               </button>
               {showModelPicker && (
-                <div className="absolute bottom-full mb-2 left-0 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-48 z-20">
+                <div
+                  className="absolute bottom-full mb-2 left-0 rounded-xl border shadow-xl overflow-hidden min-w-48 z-20"
+                  style={{ background: 'var(--ui-bg-sidebar)', borderColor: 'var(--ui-border)' }}
+                >
                   {models.map((m) => (
                     <button
                       key={m.id}
                       onClick={() => { setModelId(m.id); setShowModelPicker(false); }}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors hover:bg-white/5 ${
-                        modelId === m.id ? 'text-white' : 'text-gray-400'
-                      }`}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors"
+                      style={{ color: modelId === m.id ? 'var(--ui-text-1)' : 'var(--ui-text-2)' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
                       <span>{m.icon}</span>
                       <div className="flex-1">
                         <p className="font-medium">{m.name}</p>
-                        <p className="text-xs text-gray-600">{m.description}</p>
+                        <p className="text-xs" style={{ color: 'var(--ui-text-3)' }}>{m.description}</p>
                       </div>
-                      {modelId === m.id && <span className="text-purple-400 text-xs">✓</span>}
+                      {modelId === m.id && <span className="text-xs" style={{ color: theme.primaryColor }}>✓</span>}
                     </button>
                   ))}
                 </div>
               )}
             </div>
 
+            {/* Image mode toggle */}
             <button
               onClick={() => setImageMode((v) => !v)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                imageMode
-                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                  : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-gray-200'
-              }`}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
+              style={imageMode ? {
+                background: theme.imageActiveBg,
+                color: theme.imageActiveColor,
+                border: `1px solid ${theme.imageActiveBorder}`,
+              } : {
+                background: 'var(--ui-bg-card)',
+                color: 'var(--ui-text-3)',
+                border: '1px solid transparent',
+              }}
+              onMouseEnter={(e) => { if (!imageMode) e.currentTarget.style.background = 'var(--ui-bg-card-hover)'; }}
+              onMouseLeave={(e) => { if (!imageMode) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
             >
               <ImageIcon size={13} />
               <span>Image</span>
             </button>
 
+            {/* Docs toggle */}
             <button
               onClick={() => setShowDocs(true)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                docCount > 0
-                  ? 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20'
-                  : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-gray-200'
-              }`}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
+              style={docCount > 0 ? {
+                background: theme.docsActiveBg,
+                color: theme.docsActiveColor,
+              } : {
+                background: 'var(--ui-bg-card)',
+                color: 'var(--ui-text-3)',
+              }}
+              onMouseEnter={(e) => { if (!docCount) e.currentTarget.style.background = 'var(--ui-bg-card-hover)'; }}
+              onMouseLeave={(e) => { if (!docCount) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
             >
               <BookOpen size={13} />
               <span>Docs{docCount > 0 ? ` (${docCount})` : ''}</span>
             </button>
 
             {uploadingFile && (
-              <div className="flex items-center gap-1.5 text-xs text-gray-500 ml-auto">
+              <div className="flex items-center gap-1.5 text-xs ml-auto" style={{ color: 'var(--ui-text-3)' }}>
                 <Loader2 size={12} className="animate-spin" />
                 Uploading…
               </div>
             )}
           </div>
 
+          {/* Input area */}
           <div
-            className={`relative flex items-end gap-2 bg-white/5 border rounded-2xl p-3 transition-colors focus-within:border-purple-500/50 ${
-              imageMode ? 'border-purple-500/30' : 'border-white/10'
-            }`}
+            className="relative flex items-end gap-2 rounded-2xl p-3 transition-colors border"
+            style={{
+              background: 'var(--ui-input-bg)',
+              borderColor: textareaBorderColor,
+            }}
           >
             <textarea
               ref={textareaRef}
               value={input}
               onChange={(e) => { setInput(e.target.value); autoResize(); }}
               onKeyDown={handleKeyDown}
+              onFocus={() => setTextareaFocused(true)}
+              onBlur={() => setTextareaFocused(false)}
               placeholder={imageMode ? 'Describe the image you want…' : `Message ${model.name}…`}
               rows={1}
-              className="flex-1 bg-transparent text-white placeholder-gray-600 resize-none outline-none text-sm leading-relaxed max-h-48 py-1"
+              className="flex-1 bg-transparent placeholder-gray-500 resize-none outline-none text-sm leading-relaxed max-h-48 py-1"
+              style={{ color: 'var(--ui-text-1)' }}
               disabled={isStreaming}
             />
             {isStreaming ? (
@@ -422,13 +472,16 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
               <button
                 onClick={() => sendMessage(input)}
                 disabled={!input.trim()}
-                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors mb-0.5"
+                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors mb-0.5"
+                style={{ background: theme.primaryColor }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = theme.primaryHover; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = theme.primaryColor; }}
               >
                 <Send size={14} />
               </button>
             )}
           </div>
-          <p className="text-center text-gray-700 text-[11px]">
+          <p className="text-center text-[11px]" style={{ color: 'var(--ui-text-3)' }}>
             Enter to send · Shift+Enter for new line · Drop files to upload
           </p>
         </div>
@@ -437,7 +490,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   );
 }
 
-function EmptyState({ model, onSend }: { model: Model; onSend: (s: string) => void }) {
+function EmptyState({ model, theme, onSend }: { model: Model; theme: ProviderTheme; onSend: (s: string) => void }) {
   const suggestions = [
     'Explain how quantum computing works',
     'Write a professional email template',
@@ -448,14 +501,21 @@ function EmptyState({ model, onSend }: { model: Model; onSend: (s: string) => vo
   return (
     <div className="flex flex-col items-center justify-center h-full text-center max-w-md mx-auto px-4">
       <div className="text-5xl mb-4">{model.icon}</div>
-      <h2 className="text-white text-2xl font-semibold mb-2">{model.name}</h2>
-      <p className="text-gray-500 text-sm mb-8">{model.description}</p>
+      <h2 className="text-2xl font-semibold mb-2" style={{ color: 'var(--ui-text-1)' }}>{model.name}</h2>
+      <p className="text-sm mb-8" style={{ color: 'var(--ui-text-3)' }}>{model.description}</p>
       <div className="grid grid-cols-1 gap-2 w-full">
         {suggestions.map((s) => (
           <button
             key={s}
             onClick={() => onSend(s)}
-            className="text-left px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-gray-300 text-sm transition-colors"
+            className="text-left px-4 py-3 rounded-xl text-sm transition-colors border"
+            style={{
+              background: 'var(--ui-bg-card)',
+              borderColor: 'var(--ui-border)',
+              color: 'var(--ui-text-2)',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card-hover)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
           >
             {s}
           </button>
@@ -465,11 +525,14 @@ function EmptyState({ model, onSend }: { model: Model; onSend: (s: string) => vo
   );
 }
 
-function MessageBubble({ message, modelIcon }: { message: Message; modelIcon: string }) {
+function MessageBubble({ message, modelIcon, theme }: { message: Message; modelIcon: string; theme: ProviderTheme }) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] bg-purple-600/30 border border-purple-500/20 text-gray-100 rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed">
+        <div
+          className="max-w-[80%] border text-gray-100 rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed"
+          style={{ background: theme.userBubbleBg, borderColor: theme.userBubbleBorder }}
+        >
           {message.content}
         </div>
       </div>
@@ -478,24 +541,27 @@ function MessageBubble({ message, modelIcon }: { message: Message; modelIcon: st
 
   return (
     <div className="flex gap-3">
-      <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-sm shrink-0 mt-0.5">
+      <div
+        className="w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 mt-0.5"
+        style={{ background: 'var(--ui-bg-card)' }}
+      >
         {modelIcon}
       </div>
       <div className="flex-1 min-w-0 space-y-3">
         {message.content && (
-          <div className="prose prose-invert prose-sm max-w-none text-gray-200 leading-relaxed">
-            <MarkdownContent content={message.content} />
+          <div className="prose prose-sm max-w-none leading-relaxed" style={{ color: 'var(--ui-prose)' }}>
+            <MarkdownContent content={message.content} theme={theme} />
           </div>
         )}
         {message.mediaType === 'image' && message.mediaUrl && (
-          <GeneratedImage url={message.mediaUrl} />
+          <GeneratedImage url={message.mediaUrl} theme={theme} />
         )}
       </div>
     </div>
   );
 }
 
-function MarkdownContent({ content }: { content: string }) {
+function MarkdownContent({ content, theme }: { content: string; theme: ProviderTheme }) {
   return (
     <ReactMarkdown
       components={{
@@ -504,13 +570,16 @@ function MarkdownContent({ content }: { content: string }) {
           const raw = String(children).trimEnd();
 
           if (['document', 'spreadsheet', 'slides'].includes(lang)) {
-            return <FileBlock lang={lang as 'document' | 'spreadsheet' | 'slides'} content={raw} />;
+            return <FileBlock lang={lang as 'document' | 'spreadsheet' | 'slides'} content={raw} theme={theme} />;
           }
 
           const isBlock = !!className;
           if (isBlock) {
             return (
-              <pre className="bg-black/40 border border-white/10 rounded-xl p-4 overflow-x-auto my-3">
+              <pre
+                className="rounded-xl p-4 overflow-x-auto my-3 border"
+                style={{ background: 'var(--ui-code-bg)', borderColor: 'var(--ui-border)' }}
+              >
                 <code className={`${className} text-xs`} {...props}>
                   {children}
                 </code>
@@ -518,7 +587,11 @@ function MarkdownContent({ content }: { content: string }) {
             );
           }
           return (
-            <code className="bg-white/10 rounded px-1.5 py-0.5 text-purple-300 text-xs" {...props}>
+            <code
+              className="rounded px-1.5 py-0.5 text-xs"
+              style={{ background: 'var(--ui-code-bg)', color: theme.codeColor }}
+              {...props}
+            >
               {children}
             </code>
           );
@@ -526,12 +599,15 @@ function MarkdownContent({ content }: { content: string }) {
         p({ children }) { return <p className="mb-3 last:mb-0">{children}</p>; },
         ul({ children }) { return <ul className="list-disc list-inside mb-3 space-y-1">{children}</ul>; },
         ol({ children }) { return <ol className="list-decimal list-inside mb-3 space-y-1">{children}</ol>; },
-        h1({ children }) { return <h1 className="text-lg font-bold mb-2 text-white">{children}</h1>; },
-        h2({ children }) { return <h2 className="text-base font-semibold mb-2 text-white">{children}</h2>; },
-        h3({ children }) { return <h3 className="text-sm font-semibold mb-1 text-white">{children}</h3>; },
+        h1({ children }) { return <h1 className="text-lg font-bold mb-2" style={{ color: 'var(--ui-text-1)' }}>{children}</h1>; },
+        h2({ children }) { return <h2 className="text-base font-semibold mb-2" style={{ color: 'var(--ui-text-1)' }}>{children}</h2>; },
+        h3({ children }) { return <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--ui-text-1)' }}>{children}</h3>; },
         blockquote({ children }) {
           return (
-            <blockquote className="border-l-2 border-purple-500 pl-3 text-gray-400 italic my-2">
+            <blockquote
+              className="border-l-2 pl-3 italic my-2"
+              style={{ borderColor: theme.blockquoteBorder, color: 'var(--ui-text-3)' }}
+            >
               {children}
             </blockquote>
           );
@@ -549,7 +625,7 @@ const FILE_META = {
   slides: { icon: '📑', label: 'Presentation (.pptx)' },
 } as const;
 
-function FileBlock({ lang, content }: { lang: 'document' | 'spreadsheet' | 'slides'; content: string }) {
+function FileBlock({ lang, content, theme }: { lang: 'document' | 'spreadsheet' | 'slides'; content: string; theme: ProviderTheme }) {
   const [downloading, setDownloading] = useState(false);
   const meta = FILE_META[lang];
 
@@ -567,36 +643,45 @@ function FileBlock({ lang, content }: { lang: 'document' | 'spreadsheet' | 'slid
   };
 
   return (
-    <div className="my-3 border border-white/10 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2.5 bg-white/5 border-b border-white/5">
-        <div className="flex items-center gap-2 text-sm text-gray-300">
+    <div className="my-3 rounded-xl overflow-hidden border" style={{ borderColor: 'var(--ui-border)' }}>
+      <div
+        className="flex items-center justify-between px-4 py-2.5 border-b"
+        style={{ background: 'var(--ui-bg-card)', borderColor: 'var(--ui-border)' }}
+      >
+        <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--ui-text-2)' }}>
           <span>{meta.icon}</span>
           <span>{meta.label}</span>
         </div>
         <button
           onClick={download}
           disabled={downloading}
-          className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-xs transition-colors disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs transition-opacity disabled:opacity-50"
+          style={{ background: theme.downloadBtnBg, color: theme.downloadBtnColor }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.8')}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
         >
           {downloading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
           {downloading ? 'Preparing…' : 'Download'}
         </button>
       </div>
-      <pre className="p-4 overflow-x-auto text-xs text-gray-400 max-h-48">
+      <pre className="p-4 overflow-x-auto text-xs max-h-48" style={{ color: 'var(--ui-text-3)' }}>
         <code>{content}</code>
       </pre>
     </div>
   );
 }
 
-function GeneratedImage({ url }: { url: string }) {
+function GeneratedImage({ url, theme }: { url: string; theme: ProviderTheme }) {
   const [status, setStatus] = useState<'loading' | 'done' | 'error'>('loading');
 
   return (
     <div className="mt-2">
       {status === 'loading' && (
-        <div className="w-64 h-48 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-2 text-gray-500">
+        <div
+          className="w-64 h-48 rounded-2xl border flex items-center justify-center"
+          style={{ background: 'var(--ui-bg-card)', borderColor: 'var(--ui-border)' }}
+        >
+          <div className="flex flex-col items-center gap-2" style={{ color: 'var(--ui-text-3)' }}>
             <Loader2 size={20} className="animate-spin" />
             <span className="text-xs">Generating…</span>
           </div>
@@ -615,7 +700,8 @@ function GeneratedImage({ url }: { url: string }) {
         src={url}
         alt="Generated image"
         referrerPolicy="no-referrer"
-        className={`rounded-2xl max-w-md w-full border border-white/10 shadow-xl ${status !== 'done' ? 'hidden' : ''}`}
+        className={`rounded-2xl max-w-md w-full border shadow-xl ${status !== 'done' ? 'hidden' : ''}`}
+        style={{ borderColor: 'var(--ui-border)' }}
         onLoad={() => setStatus('done')}
         onError={() => setStatus('error')}
       />
@@ -624,7 +710,8 @@ function GeneratedImage({ url }: { url: string }) {
           href={url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-block mt-2 text-xs text-purple-400 hover:text-purple-300 transition-colors"
+          className="inline-block mt-2 text-xs transition-opacity hover:opacity-70"
+          style={{ color: theme.primaryColor }}
         >
           Open full size ↗
         </a>

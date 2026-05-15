@@ -9,32 +9,45 @@ export interface Conversation {
   modelId: 'fast' | 'balanced' | 'pro';
   provider: Provider;
   messages: Message[];
+  starred?: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-const KEY = 'polychat_history';
+function key(userId: string) {
+  return `polychat_history_${userId}`;
+}
 
-export function getHistory(): Conversation[] {
-  if (typeof window === 'undefined') return [];
+export function getHistory(userId: string): Conversation[] {
+  if (typeof window === 'undefined' || !userId) return [];
   try {
-    return JSON.parse(localStorage.getItem(KEY) ?? '[]');
+    return JSON.parse(localStorage.getItem(key(userId)) ?? '[]');
   } catch {
     return [];
   }
 }
 
-export function saveConversation(conv: Conversation) {
-  const all = getHistory();
+export function saveConversation(conv: Conversation, userId: string) {
+  if (!userId) return;
+  const all = getHistory(userId);
   const idx = all.findIndex((c) => c.id === conv.id);
   if (idx >= 0) all[idx] = conv;
   else all.unshift(conv);
-  localStorage.setItem(KEY, JSON.stringify(all.slice(0, 100)));
+  localStorage.setItem(key(userId), JSON.stringify(all.slice(0, 100)));
 }
 
-export function deleteConversation(id: string) {
-  const all = getHistory().filter((c) => c.id !== id);
-  localStorage.setItem(KEY, JSON.stringify(all));
+export function deleteConversation(id: string, userId: string) {
+  if (!userId) return;
+  const all = getHistory(userId).filter((c) => c.id !== id);
+  localStorage.setItem(key(userId), JSON.stringify(all));
+}
+
+export function toggleStarConversation(id: string, userId: string) {
+  if (!userId) return;
+  const all = getHistory(userId).map((c) =>
+    c.id === id ? { ...c, starred: !c.starred } : c
+  );
+  localStorage.setItem(key(userId), JSON.stringify(all));
 }
 
 export function groupByDate(convs: Conversation[]) {

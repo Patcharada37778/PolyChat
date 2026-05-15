@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { ChatSidebar } from '@/components/ChatSidebar';
 import { ChatWindow } from '@/components/ChatWindow';
 import { ProviderRail } from '@/components/ProviderRail';
@@ -8,6 +9,9 @@ import { Conversation } from '@/lib/history';
 import { Provider } from '@/lib/models';
 
 export default function ChatPage() {
+  const { data: session } = useSession();
+  const userId = session?.user?.email ?? '';
+
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [provider, setProvider] = useState<Provider>('gemini');
 
@@ -26,10 +30,11 @@ export default function ChatPage() {
       <ProviderRail active={provider} onSelect={handleProviderChange} />
       <ChatSidebar
         activeId={conversation?.id}
+        userId={userId}
         onSelect={handleSelectConversation}
         onNew={() => setConversation(null)}
       />
-      <main className="flex-1 min-w-0 bg-[#111111]">
+      <main className="flex-1 min-w-0" style={{ background: 'var(--ui-bg-main)' }}>
         <ChatWindow
           key={`${provider}-${conversation?.id ?? 'new'}`}
           conversation={conversation}
