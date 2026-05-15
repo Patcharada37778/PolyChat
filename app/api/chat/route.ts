@@ -1,17 +1,34 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getModel } from '@/lib/models';
+import { getModel, providerModelMap, Provider } from '@/lib/models';
 import { retrieve, getDocs } from '@/lib/rag';
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
+const deepseekClient = new OpenAI({
+  baseURL: 'https://api.deepseek.com',
+  apiKey: process.env.DEEPSEEK_API_KEY!,
+});
+
+const encoder = new TextEncoder();
+
+function sse(text: string) {
+  return encoder.encode(`data: ${JSON.stringify({ text })}\n\n`);
+}
+function sseError(msg: string) {
+  return encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`);
+}
+function sseDone() {
+  return encoder.encode('data: [DONE]\n\n');
+}
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { messages, modelId } = await req.json();
+  const { messages, modelId, provider = 'gemini' } = await req.json();
   const model = getModel(modelId ?? 'fast');
   const lastMessage = messages[messages.length - 1];
 
@@ -30,39 +47,22 @@ export async function POST(req: Request) {
   }
 
   const systemInstruction = `${model.systemPrompt}\n\nCurrent date/time: ${now} (ICT, Bangkok).${ragSection}`;
+  const actualModel = providerModelMap[provider as Provider]?.[model.id as 'fast' | 'balanced' | 'pro']
+    ?? providerModelMap.gemini[model.id as 'fast' | 'balanced' | 'pro'];
 
-  const history = messages
-    .slice(0, -1)
-    .map((m: { role: string; content: string }) => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content || '...' }],
-    }))
-    .filter((_: unknown, i: number, arr: { role: string }[]) => {
-      // Gemini requires history to start with 'user' — drop leading model turns
-      const firstUser = arr.findIndex((x) => x.role === 'user');
-      return firstUser === -1 || i >= firstUser;
-    });
-
-  const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const gemini = genAI.getGenerativeModel({
-          model: model.geminiModel,
-          systemInstruction,
-          generationConfig: { maxOutputTokens: model.maxTokens },
-        });
-        const chat = gemini.startChat({ history });
-        const result = await chat.sendMessageStream(lastMessage.content);
-        for await (const chunk of result.stream) {
-          const text = chunk.text();
-          if (text) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
+        if (provider === 'deepseek') {
+          await streamDeepSeek(controller, messages, systemInstruction, actualModel, model.maxTokens);
+        } else {
+          await streamGemini(controller, messages, systemInstruction, actualModel, model.maxTokens);
         }
-        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        controller.enqueue(sseDone());
         controller.close();
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error';
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`));
+        controller.enqueue(sseError(msg));
         controller.close();
       }
     },
@@ -71,4 +71,75 @@ export async function POST(req: Request) {
   return new Response(stream, {
     headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
   });
+}
+
+async function streamGemini(
+  controller: ReadableStreamDefaultController,
+  messages: { role: string; content: string }[],
+  systemInstruction: string,
+  modelName: string,
+  maxTokens: number,
+) {
+  const history = messages
+    .slice(0, -1)
+    .map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content || '...' }],
+    }))
+    .filter((_: unknown, i: number, arr: { role: string }[]) => {
+      const firstUser = arr.findIndex((x) => x.role === 'user');
+      return firstUser === -1 || i >= firstUser;
+    });
+
+  const lastMessage = messages[messages.length - 1];
+  const gemini = genAI.getGenerativeModel({
+    model: modelName,
+    systemInstruction,
+    generationConfig: { maxOutputTokens: maxTokens },
+  });
+  const chat = gemini.startChat({ history });
+  const result = await chat.sendMessageStream(lastMessage.content);
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) controller.enqueue(sse(text));
+  }
+}
+
+async function streamDeepSeek(
+  controller: ReadableStreamDefaultController,
+  messages: { role: string; content: string }[],
+  systemInstruction: string,
+  modelName: string,
+  maxTokens: number,
+) {
+  const history = messages
+    .slice(0, -1)
+    .filter((_: unknown, i: number, arr: { role: string }[]) => {
+      const firstUser = arr.findIndex((x) => x.role === 'user');
+      return firstUser === -1 || i >= firstUser;
+    })
+    .map((m) => ({
+      role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: m.content || '...',
+    }));
+
+  const lastMessage = messages[messages.length - 1];
+
+  const chatMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: 'system', content: systemInstruction },
+    ...history,
+    { role: 'user', content: lastMessage.content },
+  ];
+
+  const stream = await deepseekClient.chat.completions.create({
+    model: modelName,
+    messages: chatMessages,
+    stream: true,
+    max_tokens: maxTokens,
+  });
+
+  for await (const chunk of stream) {
+    const text = chunk.choices[0]?.delta?.content ?? '';
+    if (text) controller.enqueue(sse(text));
+  }
 }

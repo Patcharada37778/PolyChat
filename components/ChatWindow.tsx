@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Message } from '@/types';
-import { Model, models, getModel } from '@/lib/models';
+import { Model, models, getModel, Provider } from '@/lib/models';
 import { Conversation, saveConversation } from '@/lib/history';
 import {
   Send, StopCircle, BookOpen, Loader2, Image as ImageIcon,
@@ -13,10 +13,11 @@ import { DocumentPanel } from './DocumentPanel';
 
 interface Props {
   conversation: Conversation | null;
+  provider: Provider;
   onConversationUpdate: (conv: Conversation) => void;
 }
 
-export function ChatWindow({ conversation, onConversationUpdate }: Props) {
+export function ChatWindow({ conversation, provider, onConversationUpdate }: Props) {
   const [messages, setMessages] = useState<Message[]>(conversation?.messages ?? []);
   const [modelId, setModelId] = useState<'fast' | 'balanced' | 'pro'>(conversation?.modelId ?? 'fast');
   const [input, setInput] = useState('');
@@ -91,6 +92,7 @@ export function ChatWindow({ conversation, onConversationUpdate }: Props) {
         id: convIdRef.current,
         title,
         modelId: mid,
+        provider,
         messages: msgs,
         createdAt: convCreatedAtRef.current,
         updatedAt: now,
@@ -99,7 +101,7 @@ export function ChatWindow({ conversation, onConversationUpdate }: Props) {
       window.dispatchEvent(new Event('polychat:history'));
       onConversationUpdate(conv);
     },
-    [onConversationUpdate],
+    [onConversationUpdate, provider],
   );
 
   const sendMessage = useCallback(
@@ -172,6 +174,7 @@ export function ChatWindow({ conversation, onConversationUpdate }: Props) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             modelId,
+            provider,
             messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
           }),
           signal: abortRef.current.signal,
@@ -222,7 +225,7 @@ export function ChatWindow({ conversation, onConversationUpdate }: Props) {
         setIsStreaming(false);
       }
     },
-    [messages, isStreaming, modelId, imageMode, persistConversation],
+    [messages, isStreaming, modelId, provider, imageMode, persistConversation],
   );
 
   const handleDragOver = (e: React.DragEvent) => {

@@ -1,5 +1,8 @@
+export type Provider = 'gemini' | 'deepseek' | 'qwen';
+export type ModelTier = 'fast' | 'balanced' | 'pro';
+
 export interface Model {
-  id: 'fast' | 'balanced' | 'pro';
+  id: ModelTier;
   name: string;
   description: string;
   geminiModel: string;
@@ -7,6 +10,37 @@ export interface Model {
   systemPrompt: string;
   maxTokens: number;
 }
+
+export interface ProviderInfo {
+  id: Provider;
+  name: string;
+  available: boolean;
+}
+
+export const providerList: ProviderInfo[] = [
+  { id: 'gemini',   name: 'Gemini',   available: true  },
+  { id: 'deepseek', name: 'DeepSeek', available: true  },
+  { id: 'qwen',     name: 'Qwen',     available: false },
+];
+
+// Which underlying model to call for each provider + tier
+export const providerModelMap: Record<Provider, Record<ModelTier, string>> = {
+  gemini: {
+    fast:     'gemini-2.5-flash',
+    balanced: 'gemini-2.5-flash',
+    pro:      'gemini-2.5-pro',
+  },
+  deepseek: {
+    fast:     'deepseek-chat',
+    balanced: 'deepseek-chat',
+    pro:      'deepseek-reasoner',
+  },
+  qwen: {
+    fast:     'qwen-turbo',
+    balanced: 'qwen-plus',
+    pro:      'qwen-max',
+  },
+};
 
 const FILE_INSTRUCTIONS = `
 When the user asks you to create a document, spreadsheet, or presentation, generate the content using these exact code block types:

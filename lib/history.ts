@@ -1,11 +1,13 @@
 'use client';
 
 import { Message } from '@/types';
+import { Provider } from '@/lib/models';
 
 export interface Conversation {
   id: string;
   title: string;
   modelId: 'fast' | 'balanced' | 'pro';
+  provider: Provider;
   messages: Message[];
   createdAt: string;
   updatedAt: string;
