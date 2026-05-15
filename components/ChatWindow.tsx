@@ -118,7 +118,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
     const rec = new SR();
     rec.continuous = false;
     rec.interimResults = false;
-    rec.lang = navigator.language || 'en-US';
+    rec.lang = detectScriptLang(input) || navigator.languages?.[0] || navigator.language || 'en-US';
     rec.onresult = (e: { results: { [x: number]: { [x: number]: { transcript: string } } } }) => {
       const t = e.results[0][0].transcript;
       setInput((prev) => (prev ? `${prev} ${t}` : t));
@@ -581,6 +581,10 @@ function MessageActions({ content, theme }: { content: string; theme: ProviderTh
       .replace(/\[(.+?)\]\(.+?\)/g, '$1')
       .trim();
     const utterance = new SpeechSynthesisUtterance(plain);
+    const detectedLang = detectScriptLang(plain) || navigator.languages?.[0] || navigator.language || 'en-US';
+    utterance.lang = detectedLang;
+    const voice = getVoiceForLang(detectedLang);
+    if (voice) utterance.voice = voice;
     utterance.onend = () => setSpeaking(false);
     utterance.onerror = () => setSpeaking(false);
     window.speechSynthesis.speak(utterance);
@@ -867,6 +871,31 @@ async function downloadPDF(content: string, filename = 'document') {
     }
   }
   doc.save(`${filename}.pdf`);
+}
+
+/** Detect language from Unicode character ranges in the text. Returns BCP-47 tag or ''. */
+function detectScriptLang(text: string): string {
+  if (/[฀-๿]/.test(text)) return 'th-TH';
+  if (/[぀-ゟ゠-ヿ]/.test(text)) return 'ja-JP';
+  if (/[一-鿿㐀-䶿]/.test(text)) return 'zh-CN';
+  if (/[가-퟿]/.test(text)) return 'ko-KR';
+  if (/[؀-ۿ]/.test(text)) return 'ar-SA';
+  if (/[ऀ-ॿ]/.test(text)) return 'hi-IN';
+  if (/[Ѐ-ӿ]/.test(text)) return 'ru-RU';
+  if (/[Ͱ-Ͽ]/.test(text)) return 'el-GR';
+  return '';
+}
+
+/** Find the best available TTS voice for a language tag. */
+function getVoiceForLang(lang: string): SpeechSynthesisVoice | null {
+  if (!lang) return null;
+  const voices = window.speechSynthesis.getVoices();
+  const prefix = lang.split('-')[0];
+  return (
+    voices.find((v) => v.lang === lang) ??
+    voices.find((v) => v.lang.startsWith(prefix)) ??
+    null
+  );
 }
 
 function triggerDownload(blob: Blob, filename: string) {
