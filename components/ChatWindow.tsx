@@ -8,7 +8,7 @@ import { Conversation, saveConversation } from '@/lib/history';
 import { providerThemes, ProviderTheme } from '@/lib/providerThemes';
 import {
   Send, StopCircle, BookOpen, Loader2, Image as ImageIcon,
-  ChevronDown, Paperclip, Download, Mic, MicOff,
+  ChevronDown, Paperclip, Download, Mic,
   Copy, Check, Volume2, VolumeX,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -463,7 +463,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
               }}
               title={isListening ? 'Stop listening' : 'Voice input'}
             >
-              {isListening ? <MicOff size={15} /> : <Mic size={15} />}
+              <Mic size={15} />
             </button>
 
             {isStreaming ? (
