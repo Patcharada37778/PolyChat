@@ -7,6 +7,7 @@ import { ChatWindow } from '@/components/ChatWindow';
 import { ProviderRail } from '@/components/ProviderRail';
 import { Conversation } from '@/lib/history';
 import { Provider } from '@/lib/models';
+import { providerThemes } from '@/lib/providerThemes';
 
 export default function ChatPage() {
   const { data: session } = useSession();
@@ -34,7 +35,12 @@ export default function ChatPage() {
         onSelect={handleSelectConversation}
         onNew={() => setConversation(null)}
       />
-      <main className="flex-1 min-w-0" style={{ background: 'var(--ui-bg-main)' }}>
+      <main
+        className="flex-1 min-w-0"
+        style={{
+          background: `linear-gradient(${providerThemes[provider].chatBgTint}, ${providerThemes[provider].chatBgTint}), var(--ui-bg-main)`,
+        }}
+      >
         <ChatWindow
           key={`${provider}-${conversation?.id ?? 'new'}`}
           conversation={conversation}

@@ -64,7 +64,7 @@ function ProviderBtn({
         onClick={onClick}
         disabled={disabled}
         className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
-          disabled ? 'opacity-30 cursor-not-allowed' : active ? '' : 'opacity-60 hover:opacity-100'
+          disabled ? 'opacity-30 cursor-not-allowed' : ''
         }`}
         style={active ? {
           background: 'var(--ui-bg-card-hover)',
