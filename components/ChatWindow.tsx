@@ -935,16 +935,39 @@ function getBestVoice(lang: string, voices: SpeechSynthesisVoice[]): SpeechSynth
   );
   if (matching.length === 0) return null;
 
+  // Known pleasant female voice names across macOS / Windows / Chrome
+  const FEMALE_NAMES = [
+    'samantha', 'ava', 'allison', 'susan', 'karen', 'moira', 'fiona',
+    'tessa', 'veena', 'victoria', 'zira', 'hazel', 'aria', 'jenny',
+    'nova', 'shimmer', 'echo',
+  ];
+  // Robotic or male voices to deprioritise
+  const AVOID = ['fred', 'albert', 'bad news', 'bahh', 'bells', 'boing',
+    'bubbles', 'cellos', 'deranged', 'good news', 'hysterical',
+    'pipe organ', 'trinoids', 'whisper', 'zarvox'];
+
   const score = (v: SpeechSynthesisVoice) => {
     const n = v.name.toLowerCase();
     const u = v.voiceURI.toLowerCase();
-    if (n.startsWith('google') && v.localService === false) return 6; // Chrome online — most natural
-    if (n.startsWith('google')) return 5;
-    if (u.includes('premium')) return 4;
-    if (u.includes('enhanced')) return 3;
-    if (n.includes('siri')) return 2;
-    if (u.includes('compact')) return 0; // always last — sounds robotic
-    return 1;
+
+    if (AVOID.some((x) => n.includes(x))) return -1;
+
+    let s = 0;
+    // Quality tier
+    if (n.startsWith('google') && v.localService === false) s += 60; // Chrome online
+    else if (n.startsWith('google')) s += 50;
+    else if (u.includes('premium')) s += 40;
+    else if (u.includes('enhanced')) s += 30;
+    else if (n.includes('siri')) s += 20;
+    else if (u.includes('compact')) s += 0;
+    else s += 10;
+
+    // Prefer female voices: +20 bonus
+    if (n.includes('female') || FEMALE_NAMES.some((f) => n.includes(f))) s += 20;
+    // Deprioritise explicitly male voices
+    if (n.includes('male') && !n.includes('female')) s -= 15;
+
+    return s;
   };
 
   return [...matching].sort((a, b) => score(b) - score(a))[0];
