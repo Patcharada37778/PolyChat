@@ -48,21 +48,29 @@ export function SettingsModal({ onClose }: Props) {
       const all = window.speechSynthesis?.getVoices() ?? [];
       if (all.length === 0) return;
 
+      // quality rank: premium=3, enhanced=2, normal=1, compact=0
       const rank = (v: SpeechSynthesisVoice) =>
-        v.voiceURI.includes('premium') ? 2 : v.voiceURI.includes('enhanced') ? 1 : 0;
+        v.voiceURI.includes('premium') ? 3
+        : v.voiceURI.includes('enhanced') ? 2
+        : v.voiceURI.includes('compact') ? 0
+        : 1;
 
-      // Drop compact/low-quality voices; fall back to all if nothing remains
-      const quality = all.filter((v) => !v.voiceURI.includes('compact'));
-      const pool = quality.length > 0 ? quality : all;
+      // Deduplicate first by voiceURI
+      const seen = new Set<string>();
+      const deduped = all.filter((v) => {
+        if (seen.has(v.voiceURI)) return false;
+        seen.add(v.voiceURI);
+        return true;
+      });
 
-      // Best voice per language tag (prefer premium > enhanced > others)
+      // Best voice per language — keep compact only when it's the sole option
       const byLang = new Map<string, SpeechSynthesisVoice>();
-      for (const v of pool) {
+      for (const v of deduped) {
         const existing = byLang.get(v.lang);
         if (!existing || rank(v) > rank(existing)) byLang.set(v.lang, v);
       }
 
-      // Sort: English first, then alphabetical by lang
+      // Sort: English first, then alphabetical by lang tag
       const sorted = [...byLang.values()].sort((a, b) => {
         const aEn = a.lang.startsWith('en') ? 0 : 1;
         const bEn = b.lang.startsWith('en') ? 0 : 1;

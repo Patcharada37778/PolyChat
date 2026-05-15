@@ -583,18 +583,26 @@ function MessageActions({ content, theme }: { content: string; theme: ProviderTh
       .replace(/\[(.+?)\]\(.+?\)/g, '$1')
       .trim();
     const utterance = new SpeechSynthesisUtterance(plain);
-    const storedURI = typeof window !== 'undefined' ? localStorage.getItem('aion_voice_uri') : null;
-    const allVoices = window.speechSynthesis.getVoices();
-    const storedVoice = storedURI ? allVoices.find((v) => v.voiceURI === storedURI) : null;
-    if (storedVoice) {
-      utterance.voice = storedVoice;
-      utterance.lang = storedVoice.lang;
+
+    const storedURI = localStorage.getItem('aion_voice_uri');
+    if (storedURI) {
+      // User explicitly chose a voice — use it for everything
+      const storedVoice = window.speechSynthesis.getVoices().find((v) => v.voiceURI === storedURI);
+      if (storedVoice) {
+        utterance.voice = storedVoice;
+        utterance.lang = storedVoice.lang;
+      }
     } else {
-      const detectedLang = detectScriptLang(plain) || navigator.languages?.[0] || navigator.language || 'en-US';
-      utterance.lang = detectedLang;
-      const voice = getVoiceForLang(detectedLang);
-      if (voice) utterance.voice = voice;
+      // Only hint the language for non-Latin scripts we can reliably detect.
+      // For Latin-script languages (French, German, Spanish…) we intentionally
+      // do NOT set utterance.lang so the browser uses its own best-match voice
+      // — this is more natural than forcing an English voice.
+      const scriptLang = detectScriptLang(plain);
+      if (scriptLang) utterance.lang = scriptLang;
+      // Voice is left unset: the browser/OS picks the most natural voice for
+      // the detected (or system default) language automatically.
     }
+
     utterance.onend = () => setSpeaking(false);
     utterance.onerror = () => setSpeaking(false);
     window.speechSynthesis.speak(utterance);
@@ -883,30 +891,29 @@ async function downloadPDF(content: string, filename = 'document') {
   doc.save(`${filename}.pdf`);
 }
 
-/** Detect language from Unicode character ranges in the text. Returns BCP-47 tag or ''. */
+/** Detect language from Unicode character ranges. Returns BCP-47 tag or '' for Latin scripts. */
 function detectScriptLang(text: string): string {
-  if (/[฀-๿]/.test(text)) return 'th-TH';
-  if (/[぀-ゟ゠-ヿ]/.test(text)) return 'ja-JP';
-  if (/[一-鿿㐀-䶿]/.test(text)) return 'zh-CN';
-  if (/[가-퟿]/.test(text)) return 'ko-KR';
-  if (/[؀-ۿ]/.test(text)) return 'ar-SA';
-  if (/[ऀ-ॿ]/.test(text)) return 'hi-IN';
-  if (/[Ѐ-ӿ]/.test(text)) return 'ru-RU';
-  if (/[Ͱ-Ͽ]/.test(text)) return 'el-GR';
+  if (/[฀-๿]/.test(text)) return 'th-TH';                 // Thai
+  if (/[぀-ゟ゠-ヿ]/.test(text)) return 'ja-JP';     // Japanese kana
+  if (/[一-鿿㐀-䶿]/.test(text)) return 'zh-CN';     // CJK Unified
+  if (/[가-힯]/.test(text)) return 'ko-KR';                  // Korean hangul
+  if (/[؀-ۿ]/.test(text)) return 'ar-SA';                  // Arabic
+  if (/[ऀ-ॿ]/.test(text)) return 'hi-IN';                  // Devanagari (Hindi)
+  if (/[Ѐ-ӿ]/.test(text)) return 'ru-RU';                  // Cyrillic
+  if (/[Ͱ-Ͽ]/.test(text)) return 'el-GR';                  // Greek
+  if (/[ঀ-৿]/.test(text)) return 'bn-BD';                  // Bengali
+  if (/[஀-௿]/.test(text)) return 'ta-IN';                  // Tamil
+  if (/[ಀ-೿]/.test(text)) return 'kn-IN';                  // Kannada
+  if (/[ഀ-ൿ]/.test(text)) return 'ml-IN';                  // Malayalam
+  if (/[਀-੿]/.test(text)) return 'pa-IN';                  // Gurmukhi (Punjabi)
+  if (/[଀-୿]/.test(text)) return 'or-IN';                  // Odia
+  if (/[઀-૿]/.test(text)) return 'gu-IN';                  // Gujarati
+  if (/[ༀ-࿿]/.test(text)) return 'bo-CN';                  // Tibetan
+  if (/[֐-׿]/.test(text)) return 'he-IL';                  // Hebrew
+  if (/[܀-ݏ]/.test(text)) return 'syr';                    // Syriac
+  if (/[Ⴀ-ჿ]/.test(text)) return 'ka-GE';                  // Georgian
+  if (/[԰-֏]/.test(text)) return 'hy-AM';                  // Armenian
   return '';
-}
-
-/** Find the best available TTS voice for a language tag, preferring higher-quality voices. */
-function getVoiceForLang(lang: string): SpeechSynthesisVoice | null {
-  if (!lang) return null;
-  const voices = window.speechSynthesis.getVoices();
-  const prefix = lang.split('-')[0];
-  const rank = (v: SpeechSynthesisVoice) =>
-    v.voiceURI.includes('premium') ? 2 : v.voiceURI.includes('enhanced') ? 1 : 0;
-  const candidates = voices
-    .filter((v) => (v.lang === lang || v.lang.startsWith(prefix)) && !v.voiceURI.includes('compact'))
-    .sort((a, b) => rank(b) - rank(a));
-  return candidates[0] ?? voices.find((v) => v.lang === lang) ?? null;
 }
 
 function triggerDownload(blob: Blob, filename: string) {
