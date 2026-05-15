@@ -5,7 +5,8 @@ import { useSession } from 'next-auth/react';
 import { Message } from '@/types';
 import { Model, models, getModel, Provider } from '@/lib/models';
 import { Conversation, saveConversation } from '@/lib/history';
-import { providerThemes, ProviderTheme } from '@/lib/providerThemes';
+import { getProviderTheme, ProviderTheme } from '@/lib/providerThemes';
+import { useAccent } from '@/lib/accent';
 import {
   Send, StopCircle, BookOpen, Loader2, Image as ImageIcon,
   ChevronDown, Paperclip, Download, Mic,
@@ -25,7 +26,8 @@ interface Props {
 export function ChatWindow({ conversation, provider, onConversationUpdate }: Props) {
   const { data: session } = useSession();
   const userId = session?.user?.email ?? '';
-  const theme = providerThemes[provider];
+  const accentHex = useAccent();
+  const theme = getProviderTheme(provider, accentHex);
 
   const [messages, setMessages] = useState<Message[]>(conversation?.messages ?? []);
   const [modelId, setModelId] = useState<'fast' | 'balanced' | 'pro'>(conversation?.modelId ?? 'fast');
@@ -894,16 +896,17 @@ function detectScriptLang(text: string): string {
   return '';
 }
 
-/** Find the best available TTS voice for a language tag. */
+/** Find the best available TTS voice for a language tag, preferring higher-quality voices. */
 function getVoiceForLang(lang: string): SpeechSynthesisVoice | null {
   if (!lang) return null;
   const voices = window.speechSynthesis.getVoices();
   const prefix = lang.split('-')[0];
-  return (
-    voices.find((v) => v.lang === lang) ??
-    voices.find((v) => v.lang.startsWith(prefix)) ??
-    null
-  );
+  const rank = (v: SpeechSynthesisVoice) =>
+    v.voiceURI.includes('premium') ? 2 : v.voiceURI.includes('enhanced') ? 1 : 0;
+  const candidates = voices
+    .filter((v) => (v.lang === lang || v.lang.startsWith(prefix)) && !v.voiceURI.includes('compact'))
+    .sort((a, b) => rank(b) - rank(a));
+  return candidates[0] ?? voices.find((v) => v.lang === lang) ?? null;
 }
 
 function triggerDownload(blob: Blob, filename: string) {

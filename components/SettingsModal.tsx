@@ -45,15 +45,30 @@ export function SettingsModal({ onClose }: Props) {
     setSelectedVoiceURI(localStorage.getItem('aion_voice_uri') || '');
 
     const loadVoices = () => {
-      const v = window.speechSynthesis?.getVoices() ?? [];
-      if (v.length > 0) {
-        const seen = new Set<string>();
-        setVoices(v.filter((voice) => {
-          if (seen.has(voice.voiceURI)) return false;
-          seen.add(voice.voiceURI);
-          return true;
-        }));
+      const all = window.speechSynthesis?.getVoices() ?? [];
+      if (all.length === 0) return;
+
+      const rank = (v: SpeechSynthesisVoice) =>
+        v.voiceURI.includes('premium') ? 2 : v.voiceURI.includes('enhanced') ? 1 : 0;
+
+      // Drop compact/low-quality voices; fall back to all if nothing remains
+      const quality = all.filter((v) => !v.voiceURI.includes('compact'));
+      const pool = quality.length > 0 ? quality : all;
+
+      // Best voice per language tag (prefer premium > enhanced > others)
+      const byLang = new Map<string, SpeechSynthesisVoice>();
+      for (const v of pool) {
+        const existing = byLang.get(v.lang);
+        if (!existing || rank(v) > rank(existing)) byLang.set(v.lang, v);
       }
+
+      // Sort: English first, then alphabetical by lang
+      const sorted = [...byLang.values()].sort((a, b) => {
+        const aEn = a.lang.startsWith('en') ? 0 : 1;
+        const bEn = b.lang.startsWith('en') ? 0 : 1;
+        return aEn !== bEn ? aEn - bEn : a.lang.localeCompare(b.lang);
+      });
+      setVoices(sorted);
     };
     loadVoices();
     window.speechSynthesis?.addEventListener('voiceschanged', loadVoices);

@@ -1,7 +1,8 @@
 'use client';
 
 import { Provider } from '@/lib/models';
-import { providerThemes } from '@/lib/providerThemes';
+import { getProviderTheme } from '@/lib/providerThemes';
+import { useAccent } from '@/lib/accent';
 
 interface Props {
   active: Provider;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function ProviderRail({ active, onSelect }: Props) {
+  const accentHex = useAccent();
   return (
     <div
       className="w-[52px] flex flex-col items-center pt-[18px] gap-1.5 shrink-0 border-r"
@@ -20,7 +22,7 @@ export function ProviderRail({ active, onSelect }: Props) {
         active={active === 'gemini'}
         onClick={() => onSelect('gemini')}
         logo={<GeminiLogo />}
-        activeRing={providerThemes.gemini.railRing}
+        activeRing={getProviderTheme('gemini', accentHex).railRing}
       />
       <ProviderBtn
         id="deepseek"
@@ -28,7 +30,7 @@ export function ProviderRail({ active, onSelect }: Props) {
         active={active === 'deepseek'}
         onClick={() => onSelect('deepseek')}
         logo={<DeepSeekLogo />}
-        activeRing={providerThemes.deepseek.railRing}
+        activeRing={getProviderTheme('deepseek', accentHex).railRing}
       />
       <ProviderBtn
         id="qwen"
@@ -36,7 +38,7 @@ export function ProviderRail({ active, onSelect }: Props) {
         active={active === 'qwen'}
         onClick={() => onSelect('qwen')}
         logo={<QwenLogo />}
-        activeRing={providerThemes.qwen.railRing}
+        activeRing={getProviderTheme('qwen', accentHex).railRing}
       />
     </div>
   );

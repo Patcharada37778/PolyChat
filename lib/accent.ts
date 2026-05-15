@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+
 export type AccentPreset = 'default' | 'red' | 'orange' | 'yellow' | 'green' | 'teal' | 'blue' | 'purple' | 'pink' | 'rainbow';
 
 export const ACCENT_PRESETS: { id: AccentPreset; label: string; color: string }[] = [
@@ -43,4 +45,22 @@ export function saveAccent(colorOrPreset: string) {
   if (typeof window === 'undefined') return;
   localStorage.setItem('aion_accent', colorOrPreset);
   applyAccent(colorOrPreset);
+  window.dispatchEvent(new Event('aion:accent'));
+}
+
+/** Returns the current accent hex (e.g. '#3B82F6'). Returns null for rainbow. */
+export function useAccent(): string | null {
+  const [accent, setAccent] = useState<string | null>(null);
+
+  useEffect(() => {
+    const read = () => {
+      const v = localStorage.getItem('aion_accent') || '#8B5CF6';
+      setAccent(v === 'rainbow' ? null : v);
+    };
+    read();
+    window.addEventListener('aion:accent', read);
+    return () => window.removeEventListener('aion:accent', read);
+  }, []);
+
+  return accent;
 }

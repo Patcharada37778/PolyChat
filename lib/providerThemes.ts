@@ -1,5 +1,18 @@
 import { Provider } from './models';
 
+function hexToRgb(hex: string): string | null {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!m) return null;
+  return `${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)}`;
+}
+
+function darkenHex(hex: string): string {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!m) return hex;
+  const d = (s: string) => Math.max(0, Math.floor(parseInt(s, 16) * 0.82)).toString(16).padStart(2, '0');
+  return `#${d(m[1])}${d(m[2])}${d(m[3])}`;
+}
+
 export interface ProviderTheme {
   primaryColor: string;
   primaryHover: string;
@@ -18,6 +31,34 @@ export interface ProviderTheme {
   downloadBtnColor: string;
   blockquoteBorder: string;
   codeColor: string;
+}
+
+/** Returns the provider theme, overriding all primary colors with the accent hex when provided. */
+export function getProviderTheme(provider: Provider, accentHex?: string | null): ProviderTheme {
+  const base = providerThemes[provider];
+  if (!accentHex || !accentHex.startsWith('#')) return base;
+  const rgb = hexToRgb(accentHex);
+  if (!rgb) return base;
+  return {
+    ...base,
+    primaryColor:      accentHex,
+    primaryHover:      darkenHex(accentHex),
+    chatBgTint:        `rgba(${rgb},0.10)`,
+    userBubbleBg:      `rgba(${rgb},0.18)`,
+    userBubbleBorder:  `rgba(${rgb},0.25)`,
+    dotColor:          accentHex,
+    textareaBorderFocus: `rgba(${rgb},0.5)`,
+    imageActiveBg:     `rgba(${rgb},0.15)`,
+    imageActiveBorder: `rgba(${rgb},0.3)`,
+    imageActiveColor:  accentHex,
+    docsActiveBg:      `rgba(${rgb},0.1)`,
+    docsActiveColor:   accentHex,
+    railRing:          `rgba(${rgb},0.5)`,
+    downloadBtnBg:     `rgba(${rgb},0.15)`,
+    downloadBtnColor:  accentHex,
+    blockquoteBorder:  accentHex,
+    codeColor:         accentHex,
+  };
 }
 
 export const providerThemes: Record<Provider, ProviderTheme> = {
