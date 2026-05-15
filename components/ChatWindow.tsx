@@ -118,7 +118,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
     const rec = new SR();
     rec.continuous = false;
     rec.interimResults = false;
-    rec.lang = 'en-US';
+    rec.lang = navigator.language || 'en-US';
     rec.onresult = (e: { results: { [x: number]: { [x: number]: { transcript: string } } } }) => {
       const t = e.results[0][0].transcript;
       setInput((prev) => (prev ? `${prev} ${t}` : t));
