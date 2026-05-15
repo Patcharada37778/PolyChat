@@ -584,24 +584,13 @@ function MessageActions({ content, theme }: { content: string; theme: ProviderTh
       .trim();
     const utterance = new SpeechSynthesisUtterance(plain);
 
-    const storedURI = localStorage.getItem('aion_voice_uri');
-    if (storedURI) {
-      // User explicitly chose a voice — use it for everything
-      const storedVoice = window.speechSynthesis.getVoices().find((v) => v.voiceURI === storedURI);
-      if (storedVoice) {
-        utterance.voice = storedVoice;
-        utterance.lang = storedVoice.lang;
-      }
-    } else {
-      // Only hint the language for non-Latin scripts we can reliably detect.
-      // For Latin-script languages (French, German, Spanish…) we intentionally
-      // do NOT set utterance.lang so the browser uses its own best-match voice
-      // — this is more natural than forcing an English voice.
-      const scriptLang = detectScriptLang(plain);
-      if (scriptLang) utterance.lang = scriptLang;
-      // Voice is left unset: the browser/OS picks the most natural voice for
-      // the detected (or system default) language automatically.
-    }
+    // Set a language hint for non-Latin scripts we can reliably detect.
+    // For Latin-script text (French, German, Spanish, English…) we leave
+    // utterance.lang unset so the browser uses its own best natural voice.
+    // utterance.voice is never forced — the browser picks the best voice for
+    // the language automatically.
+    const scriptLang = detectScriptLang(plain);
+    if (scriptLang) utterance.lang = scriptLang;
 
     utterance.onend = () => setSpeaking(false);
     utterance.onerror = () => setSpeaking(false);

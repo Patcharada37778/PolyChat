@@ -30,8 +30,6 @@ export function SettingsModal({ onClose }: Props) {
   // General
   const [accentColor, setAccentColor] = useState('#8B5CF6');
   const [customColor, setCustomColor] = useState('#8B5CF6');
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [selectedVoiceURI, setSelectedVoiceURI] = useState('');
 
   useEffect(() => {
     setDisplayName(localStorage.getItem('aion_display_name') || session?.user?.name || '');
@@ -42,45 +40,6 @@ export function SettingsModal({ onClose }: Props) {
     setAccentColor(savedAccent);
     if (savedAccent !== 'rainbow') setCustomColor(savedAccent);
 
-    setSelectedVoiceURI(localStorage.getItem('aion_voice_uri') || '');
-
-    const loadVoices = () => {
-      const all = window.speechSynthesis?.getVoices() ?? [];
-      if (all.length === 0) return;
-
-      // quality rank: premium=3, enhanced=2, normal=1, compact=0
-      const rank = (v: SpeechSynthesisVoice) =>
-        v.voiceURI.includes('premium') ? 3
-        : v.voiceURI.includes('enhanced') ? 2
-        : v.voiceURI.includes('compact') ? 0
-        : 1;
-
-      // Deduplicate first by voiceURI
-      const seen = new Set<string>();
-      const deduped = all.filter((v) => {
-        if (seen.has(v.voiceURI)) return false;
-        seen.add(v.voiceURI);
-        return true;
-      });
-
-      // Best voice per language — keep compact only when it's the sole option
-      const byLang = new Map<string, SpeechSynthesisVoice>();
-      for (const v of deduped) {
-        const existing = byLang.get(v.lang);
-        if (!existing || rank(v) > rank(existing)) byLang.set(v.lang, v);
-      }
-
-      // Sort: English first, then alphabetical by lang tag
-      const sorted = [...byLang.values()].sort((a, b) => {
-        const aEn = a.lang.startsWith('en') ? 0 : 1;
-        const bEn = b.lang.startsWith('en') ? 0 : 1;
-        return aEn !== bEn ? aEn - bEn : a.lang.localeCompare(b.lang);
-      });
-      setVoices(sorted);
-    };
-    loadVoices();
-    window.speechSynthesis?.addEventListener('voiceschanged', loadVoices);
-    return () => window.speechSynthesis?.removeEventListener('voiceschanged', loadVoices);
   }, [session]);
 
   // Close on Escape
@@ -118,19 +77,6 @@ export function SettingsModal({ onClose }: Props) {
     setCustomColor(color);
     setAccentColor(color);
     saveAccent(color);
-  };
-
-  const handleVoiceSelect = (voiceURI: string) => {
-    setSelectedVoiceURI(voiceURI);
-    localStorage.setItem('aion_voice_uri', voiceURI);
-    const voice = voices.find((v) => v.voiceURI === voiceURI);
-    if (voice) {
-      window.speechSynthesis.cancel();
-      const utt = new SpeechSynthesisUtterance('Hello, this is how I sound.');
-      utt.voice = voice;
-      utt.lang = voice.lang;
-      window.speechSynthesis.speak(utt);
-    }
   };
 
   const initials = (displayName || session?.user?.name || '?')[0]?.toUpperCase();
@@ -467,92 +413,6 @@ export function SettingsModal({ onClose }: Props) {
                   </p>
                 </div>
 
-                {/* Voice */}
-                <div>
-                  <label
-                    className="block text-xs font-medium mb-1"
-                    style={{ color: 'var(--ui-text-2)' }}
-                  >
-                    Voice
-                  </label>
-                  <p className="text-xs mb-3" style={{ color: 'var(--ui-text-3)' }}>
-                    Choose a text-to-speech voice. Click to preview.
-                  </p>
-                  <div
-                    className="rounded-xl border overflow-hidden"
-                    style={{ borderColor: 'var(--ui-input-border)' }}
-                  >
-                    <div className="max-h-52 overflow-y-auto">
-                      {voices.length === 0 ? (
-                        <p
-                          className="text-xs px-3 py-4 text-center"
-                          style={{ color: 'var(--ui-text-3)' }}
-                        >
-                          No voices found on this device.
-                        </p>
-                      ) : (
-                        voices.map((voice, i) => {
-                          const active = selectedVoiceURI === voice.voiceURI;
-                          return (
-                            <button
-                              key={`${voice.voiceURI}-${i}`}
-                              onClick={() => handleVoiceSelect(voice.voiceURI)}
-                              className="w-full flex items-center justify-between px-3 py-2 text-sm text-left border-b last:border-0 transition-colors"
-                              style={{
-                                borderColor: 'var(--ui-border)',
-                                background: active ? 'var(--ui-bg-card-hover)' : 'transparent',
-                                color: active ? 'var(--ui-text-1)' : 'var(--ui-text-2)',
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!active)
-                                  e.currentTarget.style.background = 'var(--ui-bg-card)';
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!active) e.currentTarget.style.background = 'transparent';
-                              }}
-                            >
-                              <div>
-                                <span className="font-medium">{voice.name}</span>
-                                <span
-                                  className="ml-2 text-xs"
-                                  style={{ color: 'var(--ui-text-3)' }}
-                                >
-                                  {voice.lang}
-                                </span>
-                              </div>
-                              {active && (
-                                <span
-                                  className="text-xs font-medium"
-                                  style={{ color: 'var(--ui-accent, #8B5CF6)' }}
-                                >
-                                  ✓ Active
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                  {selectedVoiceURI && (
-                    <button
-                      className="mt-2 text-xs transition-colors"
-                      style={{ color: 'var(--ui-text-3)' }}
-                      onClick={() => {
-                        setSelectedVoiceURI('');
-                        localStorage.removeItem('aion_voice_uri');
-                      }}
-                      onMouseEnter={(e) =>
-                        (e.currentTarget.style.color = 'var(--ui-text-2)')
-                      }
-                      onMouseLeave={(e) =>
-                        (e.currentTarget.style.color = 'var(--ui-text-3)')
-                      }
-                    >
-                      Reset to auto-detect
-                    </button>
-                  )}
-                </div>
               </div>
             )}
 
