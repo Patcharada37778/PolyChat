@@ -24,7 +24,7 @@ export const providerThemes: Record<Provider, ProviderTheme> = {
   gemini: {
     primaryColor: '#3B82F6',
     primaryHover: '#2563EB',
-    chatBgTint: 'rgba(59,130,246,0.04)',
+    chatBgTint: 'rgba(59,130,246,0.10)',
     userBubbleBg: 'rgba(59,130,246,0.18)',
     userBubbleBorder: 'rgba(96,165,250,0.25)',
     dotColor: '#60A5FA',
@@ -43,7 +43,7 @@ export const providerThemes: Record<Provider, ProviderTheme> = {
   deepseek: {
     primaryColor: '#1D4ED8',
     primaryHover: '#1E40AF',
-    chatBgTint: 'rgba(29,78,216,0.05)',
+    chatBgTint: 'rgba(29,78,216,0.11)',
     userBubbleBg: 'rgba(29,78,216,0.22)',
     userBubbleBorder: 'rgba(59,130,246,0.22)',
     dotColor: '#3B82F6',
@@ -62,7 +62,7 @@ export const providerThemes: Record<Provider, ProviderTheme> = {
   qwen: {
     primaryColor: '#9333EA',
     primaryHover: '#7C3AED',
-    chatBgTint: 'rgba(147,51,234,0.04)',
+    chatBgTint: 'rgba(147,51,234,0.10)',
     userBubbleBg: 'rgba(147,51,234,0.18)',
     userBubbleBorder: 'rgba(168,85,247,0.25)',
     dotColor: '#C084FC',
