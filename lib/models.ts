@@ -43,20 +43,39 @@ export const providerModelMap: Record<Provider, Record<ModelTier, string>> = {
 };
 
 const FILE_INSTRUCTIONS = `
-When the user asks you to create a document, spreadsheet, or presentation, generate the content using these exact code block types:
+IMPORTANT: When the user asks you to create any of the following file types, you MUST use the exact code block format shown. Do not use plain text or regular markdown. The app will automatically show a download button.
 
-For a document/report/essay: use \`\`\`document ... \`\`\`  with Markdown inside.
-For a spreadsheet/table/data: use \`\`\`spreadsheet ... \`\`\`  with CSV inside (first row = headers).
-For a presentation/slides: use \`\`\`slides ... \`\`\`  with this format:
+For a DOCUMENT / report / essay / letter:
+\`\`\`document
+# Title
+Content in markdown...
+\`\`\`
+
+For a SPREADSHEET / table / data / CSV:
+\`\`\`spreadsheet
+Header1,Header2,Header3
+value1,value2,value3
+\`\`\`
+
+For a PRESENTATION / slides / PowerPoint:
+\`\`\`slides
 ---
 # Slide Title
-content here (use - for bullets)
+- bullet point
+- another point
 ---
 # Next Slide
-more content
+More content
 ---
+\`\`\`
 
-Always use these blocks for file creation requests. The user's app will render download buttons automatically.`;
+For a PDF document:
+\`\`\`pdf
+# Title
+Content in markdown...
+\`\`\`
+
+Always use these exact code block types. Never skip them for file creation requests.`;
 
 export const models: Model[] = [
   {
