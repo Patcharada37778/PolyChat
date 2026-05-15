@@ -6,16 +6,6 @@ import { authOptions } from '@/lib/auth';
 import { getModel, providerModelMap, Provider } from '@/lib/models';
 import { retrieve, getDocs } from '@/lib/rag';
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
-const deepseekClient = new OpenAI({
-  baseURL: 'https://api.deepseek.com',
-  apiKey: process.env.DEEPSEEK_API_KEY || 'not-configured',
-});
-const qwenClient = new OpenAI({
-  baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  apiKey: process.env.QWEN_API_KEY || 'not-configured',
-});
-
 const encoder = new TextEncoder();
 
 function sse(text: string) {
@@ -31,6 +21,16 @@ function sseDone() {
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
+  const deepseekClient = new OpenAI({
+    baseURL: 'https://api.deepseek.com',
+    apiKey: process.env.DEEPSEEK_API_KEY || 'placeholder',
+  });
+  const qwenClient = new OpenAI({
+    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    apiKey: process.env.QWEN_API_KEY || 'placeholder',
+  });
 
   const { messages, modelId, provider = 'gemini' } = await req.json();
   const model = getModel(modelId ?? 'fast');
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
         } else if (provider === 'qwen') {
           await streamOpenAICompat(controller, qwenClient, messages, systemInstruction, actualModel, model.maxTokens);
         } else {
-          await streamGemini(controller, messages, systemInstruction, actualModel, model.maxTokens);
+          await streamGemini(controller, genAI, messages, systemInstruction, actualModel, model.maxTokens);
         }
         controller.enqueue(sseDone());
         controller.close();
@@ -81,6 +81,7 @@ export async function POST(req: Request) {
 
 async function streamGemini(
   controller: ReadableStreamDefaultController,
+  genAI: GoogleGenerativeAI,
   messages: { role: string; content: string }[],
   systemInstruction: string,
   modelName: string,
