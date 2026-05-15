@@ -595,6 +595,7 @@ function MarkdownContent({ content, theme }: { content: string; theme: ProviderT
         p({ children }) { return <p className="mb-3 last:mb-0">{children}</p>; },
         ul({ children }) { return <ul className="list-disc list-inside mb-3 space-y-1">{children}</ul>; },
         ol({ children }) { return <ol className="list-decimal list-inside mb-3 space-y-1">{children}</ol>; },
+        strong({ children }) { return <strong style={{ color: 'var(--ui-text-1)', fontWeight: 700 }}>{children}</strong>; },
         h1({ children }) { return <h1 className="text-lg font-bold mb-2" style={{ color: 'var(--ui-text-1)' }}>{children}</h1>; },
         h2({ children }) { return <h2 className="text-base font-semibold mb-2" style={{ color: 'var(--ui-text-1)' }}>{children}</h2>; },
         h3({ children }) { return <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--ui-text-1)' }}>{children}</h3>; },
