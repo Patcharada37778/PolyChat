@@ -560,6 +560,17 @@ function MessageBubble({ message, modelIcon, theme }: { message: Message; modelI
 function MessageActions({ content, theme }: { content: string; theme: ProviderTheme }) {
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+
+  useEffect(() => {
+    const load = () => {
+      const v = window.speechSynthesis?.getVoices() ?? [];
+      if (v.length > 0) setVoices(v);
+    };
+    load();
+    window.speechSynthesis?.addEventListener('voiceschanged', load);
+    return () => window.speechSynthesis?.removeEventListener('voiceschanged', load);
+  }, []);
 
   const handleCopy = async () => {
     const plainText = content.replace(/```[\s\S]*?```/g, '[code]').replace(/[#*`_~]/g, '');
@@ -582,15 +593,19 @@ function MessageActions({ content, theme }: { content: string; theme: ProviderTh
       .replace(/`(.+?)`/g, '$1')
       .replace(/\[(.+?)\]\(.+?\)/g, '$1')
       .trim();
-    const utterance = new SpeechSynthesisUtterance(plain);
 
-    // Set a language hint for non-Latin scripts we can reliably detect.
-    // For Latin-script text (French, German, Spanish, English…) we leave
-    // utterance.lang unset so the browser uses its own best natural voice.
-    // utterance.voice is never forced — the browser picks the best voice for
-    // the language automatically.
+    const utterance = new SpeechSynthesisUtterance(plain);
+    utterance.rate = 0.92;   // slightly relaxed — sounds more natural, less robotic
+
+    // Detect language; for undetected Latin scripts fall back to browser language
     const scriptLang = detectScriptLang(plain);
-    if (scriptLang) utterance.lang = scriptLang;
+    const targetLang = scriptLang || navigator.language || 'en-US';
+    utterance.lang = targetLang;
+
+    // Explicitly pick the best available voice so the browser never silently
+    // falls back to a default English voice when a better match exists.
+    const best = getBestVoice(targetLang, voices);
+    if (best) utterance.voice = best;
 
     utterance.onend = () => setSpeaking(false);
     utterance.onerror = () => setSpeaking(false);
@@ -880,29 +895,59 @@ async function downloadPDF(content: string, filename = 'document') {
   doc.save(`${filename}.pdf`);
 }
 
-/** Detect language from Unicode character ranges. Returns BCP-47 tag or '' for Latin scripts. */
+/** Detect language from Unicode script ranges. Returns BCP-47 tag or '' for Latin scripts. */
 function detectScriptLang(text: string): string {
-  if (/[฀-๿]/.test(text)) return 'th-TH';                 // Thai
-  if (/[぀-ゟ゠-ヿ]/.test(text)) return 'ja-JP';     // Japanese kana
-  if (/[一-鿿㐀-䶿]/.test(text)) return 'zh-CN';     // CJK Unified
-  if (/[가-힯]/.test(text)) return 'ko-KR';                  // Korean hangul
-  if (/[؀-ۿ]/.test(text)) return 'ar-SA';                  // Arabic
-  if (/[ऀ-ॿ]/.test(text)) return 'hi-IN';                  // Devanagari (Hindi)
-  if (/[Ѐ-ӿ]/.test(text)) return 'ru-RU';                  // Cyrillic
-  if (/[Ͱ-Ͽ]/.test(text)) return 'el-GR';                  // Greek
-  if (/[ঀ-৿]/.test(text)) return 'bn-BD';                  // Bengali
-  if (/[஀-௿]/.test(text)) return 'ta-IN';                  // Tamil
-  if (/[ಀ-೿]/.test(text)) return 'kn-IN';                  // Kannada
-  if (/[ഀ-ൿ]/.test(text)) return 'ml-IN';                  // Malayalam
-  if (/[਀-੿]/.test(text)) return 'pa-IN';                  // Gurmukhi (Punjabi)
-  if (/[଀-୿]/.test(text)) return 'or-IN';                  // Odia
-  if (/[઀-૿]/.test(text)) return 'gu-IN';                  // Gujarati
-  if (/[ༀ-࿿]/.test(text)) return 'bo-CN';                  // Tibetan
-  if (/[֐-׿]/.test(text)) return 'he-IL';                  // Hebrew
-  if (/[܀-ݏ]/.test(text)) return 'syr';                    // Syriac
-  if (/[Ⴀ-ჿ]/.test(text)) return 'ka-GE';                  // Georgian
-  if (/[԰-֏]/.test(text)) return 'hy-AM';                  // Armenian
+  /* eslint-disable no-control-regex */
+  if (/[฀-๿]/.test(text)) return 'th-TH';   // Thai
+  if (/[぀-ゟ゠-ヿ]/.test(text)) return 'ja-JP'; // Japanese kana
+  if (/[一-鿿㐀-䶿]/.test(text)) return 'zh-CN'; // CJK
+  if (/[가-힣]/.test(text)) return 'ko-KR';   // Korean hangul
+  if (/[؀-ۿ]/.test(text)) return 'ar-SA';   // Arabic
+  if (/[ऀ-ॿ]/.test(text)) return 'hi-IN';   // Devanagari (Hindi)
+  if (/[Ѐ-ӿ]/.test(text)) return 'ru-RU';   // Cyrillic
+  if (/[Ͱ-Ͽ]/.test(text)) return 'el-GR';   // Greek
+  if (/[ঀ-৿]/.test(text)) return 'bn-BD';   // Bengali
+  if (/[஀-௿]/.test(text)) return 'ta-IN';   // Tamil
+  if (/[ಀ-೿]/.test(text)) return 'kn-IN';   // Kannada
+  if (/[ഀ-ൿ]/.test(text)) return 'ml-IN';   // Malayalam
+  if (/[਀-੿]/.test(text)) return 'pa-IN';   // Gurmukhi
+  if (/[઀-૿]/.test(text)) return 'gu-IN';   // Gujarati
+  if (/[଀-୿]/.test(text)) return 'or-IN';   // Odia
+  if (/[ༀ-࿿]/.test(text)) return 'bo-CN';   // Tibetan
+  if (/[֐-׿]/.test(text)) return 'he-IL';   // Hebrew
+  if (/[Ⴀ-ჿ]/.test(text)) return 'ka-GE';   // Georgian
+  if (/[԰-֏]/.test(text)) return 'hy-AM';   // Armenian
+  /* eslint-enable no-control-regex */
   return '';
+}
+
+/**
+ * Pick the most natural available voice for a language.
+ * Ranking: Chrome Google online > premium > enhanced > other > compact.
+ * Never returns null if ANY matching voice exists — compact is better than
+ * the browser silently falling back to a random English voice.
+ */
+function getBestVoice(lang: string, voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  if (!lang || voices.length === 0) return null;
+  const prefix = lang.split('-')[0];
+  const matching = voices.filter(
+    (v) => v.lang === lang || v.lang.startsWith(`${prefix}-`) || v.lang === prefix,
+  );
+  if (matching.length === 0) return null;
+
+  const score = (v: SpeechSynthesisVoice) => {
+    const n = v.name.toLowerCase();
+    const u = v.voiceURI.toLowerCase();
+    if (n.startsWith('google') && v.localService === false) return 6; // Chrome online — most natural
+    if (n.startsWith('google')) return 5;
+    if (u.includes('premium')) return 4;
+    if (u.includes('enhanced')) return 3;
+    if (n.includes('siri')) return 2;
+    if (u.includes('compact')) return 0; // always last — sounds robotic
+    return 1;
+  };
+
+  return [...matching].sort((a, b) => score(b) - score(a))[0];
 }
 
 function triggerDownload(blob: Blob, filename: string) {
