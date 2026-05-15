@@ -33,8 +33,8 @@ export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
 
   useEffect(() => {
     const handler = () => refresh();
-    window.addEventListener('polychat:history', handler);
-    return () => window.removeEventListener('polychat:history', handler);
+    window.addEventListener('aion:history', handler);
+    return () => window.removeEventListener('aion:history', handler);
   }, [userId]);
 
   useEffect(() => {
@@ -77,7 +77,7 @@ export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
             <Sparkles size={13} className="text-white" />
           </div>
           <span className="font-semibold tracking-tight text-sm" style={{ color: 'var(--ui-text-1)' }}>
-            PolyChat
+            AIon
           </span>
         </div>
         <button

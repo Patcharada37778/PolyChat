@@ -18,7 +18,7 @@ export function Sidebar() {
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg">
             <Sparkles size={16} className="text-white" />
           </div>
-          <span className="text-white font-semibold text-lg tracking-tight">PolyChat</span>
+          <span className="text-white font-semibold text-lg tracking-tight">AIon</span>
         </Link>
       </div>
 

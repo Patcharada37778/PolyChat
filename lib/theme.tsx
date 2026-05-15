@@ -65,7 +65,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<ThemeMode>('dark');
 
   useEffect(() => {
-    const saved = localStorage.getItem('polychat_theme') as ThemeMode | null;
+    const saved = localStorage.getItem('aion_theme') as ThemeMode | null;
     const initial = (saved === 'light' || saved === 'dark') ? saved : 'dark';
     setMode(initial);
     applyVars(initial);
@@ -73,7 +73,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     applyVars(mode);
-    localStorage.setItem('polychat_theme', mode);
+    localStorage.setItem('aion_theme', mode);
   }, [mode]);
 
   const toggle = () => setMode((m) => (m === 'dark' ? 'light' : 'dark'));

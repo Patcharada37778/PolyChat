@@ -3,7 +3,7 @@ import './globals.css';
 import { Providers } from '@/components/Providers';
 
 export const metadata: Metadata = {
-  title: 'PolyChat — AI Models in One Place',
+  title: 'AIon — AI in One Place',
   description: 'Chat with multiple AI models including Claude Haiku, Sonnet, and Opus.',
 };
 

@@ -44,7 +44,7 @@ export default function SignupPage() {
             <Sparkles size={22} className="text-white" />
           </div>
           <h1 className="text-white text-2xl font-bold">Create account</h1>
-          <p className="text-gray-500 text-sm mt-1">Join PolyChat for free</p>
+          <p className="text-gray-500 text-sm mt-1">Join AIon for free</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

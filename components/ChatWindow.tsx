@@ -105,7 +105,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
         updatedAt: now,
       };
       saveConversation(conv, userId);
-      window.dispatchEvent(new Event('polychat:history'));
+      window.dispatchEvent(new Event('aion:history'));
       onConversationUpdate(conv);
     },
     [onConversationUpdate, provider, userId],

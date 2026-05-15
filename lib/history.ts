@@ -15,7 +15,7 @@ export interface Conversation {
 }
 
 function key(userId: string) {
-  return `polychat_history_${userId}`;
+  return `aion_history_${userId}`;
 }
 
 export function getHistory(userId: string): Conversation[] {

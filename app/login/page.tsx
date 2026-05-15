@@ -42,7 +42,7 @@ export default function LoginPage() {
             <Sparkles size={22} className="text-white" />
           </div>
           <h1 className="text-white text-2xl font-bold">Welcome back</h1>
-          <p className="text-gray-500 text-sm mt-1">Sign in to PolyChat</p>
+          <p className="text-gray-500 text-sm mt-1">Sign in to AIon</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
