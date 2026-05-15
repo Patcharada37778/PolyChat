@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { useSession, signOut } from 'next-auth/react';
-import { Sparkles, Plus, Trash2, MessageSquare, Search, Star, Settings, Sun, Moon } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
+import { Sparkles, Plus, Trash2, MessageSquare, Search, Star, Settings } from 'lucide-react';
 import {
   getHistory, deleteConversation, toggleStarConversation,
   groupByDate, Conversation,
 } from '@/lib/history';
-import { useTheme } from '@/lib/theme';
+import { SettingsModal } from './SettingsModal';
 
 interface Props {
   activeId?: string;
@@ -16,13 +16,29 @@ interface Props {
   onNew: () => void;
 }
 
+interface ProfileData {
+  displayName: string;
+  avatar: string | null;
+}
+
+function loadProfile(fallbackName: string): ProfileData {
+  return {
+    displayName: localStorage.getItem('aion_display_name') || fallbackName,
+    avatar: localStorage.getItem('aion_avatar'),
+  };
+}
+
 export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
   const { data: session } = useSession();
-  const { isDark, toggle } = useTheme();
   const [allConvs, setAllConvs] = useState<Conversation[]>([]);
   const [search, setSearch] = useState('');
   const [showSettings, setShowSettings] = useState(false);
-  const settingsRef = useRef<HTMLDivElement>(null);
+  const [profile, setProfile] = useState<ProfileData>({ displayName: '', avatar: null });
+
+  const refreshProfile = useCallback(() => {
+    const fallback = session?.user?.name || session?.user?.email || 'User';
+    setProfile(loadProfile(fallback));
+  }, [session]);
 
   const refresh = () => {
     if (!userId) return;
@@ -31,6 +47,8 @@ export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
 
   useEffect(() => { refresh(); }, [userId]);
 
+  useEffect(() => { refreshProfile(); }, [refreshProfile]);
+
   useEffect(() => {
     const handler = () => refresh();
     window.addEventListener('aion:history', handler);
@@ -38,14 +56,10 @@ export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
   }, [userId]);
 
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
-        setShowSettings(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
+    const handler = () => refreshProfile();
+    window.addEventListener('aion:profile', handler);
+    return () => window.removeEventListener('aion:profile', handler);
+  }, [refreshProfile]);
 
   const handleDelete = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -65,179 +79,161 @@ export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
   const groups = groupByDate(unstarred);
   const noResults = q && starred.length === 0 && unstarred.length === 0;
 
+  const initials = profile.displayName[0]?.toUpperCase() || session?.user?.email?.[0]?.toUpperCase() || 'U';
+
   return (
-    <aside
-      className="w-64 flex flex-col h-screen shrink-0 border-r"
-      style={{ background: 'var(--ui-bg-sidebar)', borderColor: 'var(--ui-border)' }}
-    >
-      {/* Logo + New chat */}
-      <div className="px-3 py-4 border-b" style={{ borderColor: 'var(--ui-border)' }}>
-        <div className="flex items-center gap-2.5 px-2 mb-3">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shrink-0">
-            <Sparkles size={13} className="text-white" />
-          </div>
-          <span className="font-semibold tracking-tight text-sm" style={{ color: 'var(--ui-text-1)' }}>
-            AIon
-          </span>
-        </div>
-        <button
-          onClick={onNew}
-          className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm transition-colors"
-          style={{ background: 'var(--ui-bg-card)', color: 'var(--ui-text-2)' }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card-hover)')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
-        >
-          <Plus size={15} />
-          New chat
-        </button>
-      </div>
-
-      {/* Search */}
-      <div className="px-3 pt-2.5 pb-1.5">
-        <div
-          className="flex items-center gap-2 px-3 py-2 rounded-xl"
-          style={{ background: 'var(--ui-input-bg)', border: '1px solid var(--ui-border)' }}
-        >
-          <Search size={13} style={{ color: 'var(--ui-text-3)', flexShrink: 0 }} />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search chats…"
-            className="flex-1 bg-transparent outline-none text-xs"
-            style={{ color: 'var(--ui-text-1)' }}
-          />
-          {search && (
-            <button onClick={() => setSearch('')} className="text-xs" style={{ color: 'var(--ui-text-3)' }}>
-              ✕
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* History */}
-      <nav className="flex-1 overflow-y-auto py-1 px-2">
-        {/* Starred */}
-        {starred.length > 0 && (
-          <div className="mb-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider px-2 mb-1" style={{ color: 'var(--ui-text-3)' }}>
-              Starred
-            </p>
-            {starred.map((conv) => (
-              <ConvItem
-                key={conv.id}
-                conv={conv}
-                active={conv.id === activeId}
-                onSelect={onSelect}
-                onDelete={handleDelete}
-                onStar={handleStar}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* No results */}
-        {noResults && (
-          <p className="text-center text-xs px-4 py-6" style={{ color: 'var(--ui-text-3)' }}>
-            No results for &ldquo;{search}&rdquo;
-          </p>
-        )}
-
-        {/* Empty state */}
-        {!q && allConvs.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-32 text-xs gap-2" style={{ color: 'var(--ui-text-3)' }}>
-            <MessageSquare size={18} className="opacity-40" />
-            <span>No conversations yet</span>
-          </div>
-        )}
-
-        {/* Date groups */}
-        {groups.map((group) => (
-          <div key={group.label} className="mb-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider px-2 mb-1" style={{ color: 'var(--ui-text-3)' }}>
-              {group.label}
-            </p>
-            {group.items.map((conv) => (
-              <ConvItem
-                key={conv.id}
-                conv={conv}
-                active={conv.id === activeId}
-                onSelect={onSelect}
-                onDelete={handleDelete}
-                onStar={handleStar}
-              />
-            ))}
-          </div>
-        ))}
-      </nav>
-
-      {/* Bottom: user + settings */}
-      <div className="p-3 border-t relative" style={{ borderColor: 'var(--ui-border)' }}>
-        {session && (
-          <div className="flex items-center gap-2 px-2 py-1.5 rounded-xl">
-            <div className="w-7 h-7 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0">
-              {session.user?.name?.[0]?.toUpperCase() ?? 'U'}
+    <>
+      <aside
+        className="w-64 flex flex-col h-screen shrink-0 border-r"
+        style={{ background: 'var(--ui-bg-sidebar)', borderColor: 'var(--ui-border)' }}
+      >
+        {/* Logo + New chat */}
+        <div className="px-3 py-4 border-b" style={{ borderColor: 'var(--ui-border)' }}>
+          <div className="flex items-center gap-2.5 px-2 mb-3">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shrink-0">
+              <Sparkles size={13} className="text-white" />
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium truncate" style={{ color: 'var(--ui-text-1)' }}>
-                {session.user?.name}
+            <span className="font-semibold tracking-tight text-sm" style={{ color: 'var(--ui-text-1)' }}>
+              AIon
+            </span>
+          </div>
+          <button
+            onClick={onNew}
+            className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm transition-colors"
+            style={{ background: 'var(--ui-bg-card)', color: 'var(--ui-text-2)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card-hover)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+          >
+            <Plus size={15} />
+            New chat
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="px-3 pt-2.5 pb-1.5">
+          <div
+            className="flex items-center gap-2 px-3 py-2 rounded-xl"
+            style={{ background: 'var(--ui-input-bg)', border: '1px solid var(--ui-border)' }}
+          >
+            <Search size={13} style={{ color: 'var(--ui-text-3)', flexShrink: 0 }} />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search chats…"
+              className="flex-1 bg-transparent outline-none text-xs"
+              style={{ color: 'var(--ui-text-1)' }}
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="text-xs" style={{ color: 'var(--ui-text-3)' }}>
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* History */}
+        <nav className="flex-1 overflow-y-auto py-1 px-2">
+          {starred.length > 0 && (
+            <div className="mb-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider px-2 mb-1" style={{ color: 'var(--ui-text-3)' }}>
+                Starred
               </p>
+              {starred.map((conv) => (
+                <ConvItem
+                  key={conv.id}
+                  conv={conv}
+                  active={conv.id === activeId}
+                  onSelect={onSelect}
+                  onDelete={handleDelete}
+                  onStar={handleStar}
+                />
+              ))}
             </div>
+          )}
 
-            {/* Settings trigger + popover */}
-            <div className="relative" ref={settingsRef}>
+          {noResults && (
+            <p className="text-center text-xs px-4 py-6" style={{ color: 'var(--ui-text-3)' }}>
+              No results for &ldquo;{search}&rdquo;
+            </p>
+          )}
+
+          {!q && allConvs.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-32 text-xs gap-2" style={{ color: 'var(--ui-text-3)' }}>
+              <MessageSquare size={18} className="opacity-40" />
+              <span>No conversations yet</span>
+            </div>
+          )}
+
+          {groups.map((group) => (
+            <div key={group.label} className="mb-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider px-2 mb-1" style={{ color: 'var(--ui-text-3)' }}>
+                {group.label}
+              </p>
+              {group.items.map((conv) => (
+                <ConvItem
+                  key={conv.id}
+                  conv={conv}
+                  active={conv.id === activeId}
+                  onSelect={onSelect}
+                  onDelete={handleDelete}
+                  onStar={handleStar}
+                />
+              ))}
+            </div>
+          ))}
+        </nav>
+
+        {/* Bottom: user + settings */}
+        <div className="p-3 border-t" style={{ borderColor: 'var(--ui-border)' }}>
+          {session && (
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded-xl">
+              {/* Avatar */}
+              <div
+                className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center text-white text-xs font-semibold shrink-0"
+                style={{
+                  background: profile.avatar ? undefined : 'linear-gradient(135deg,#8B5CF6,#3B82F6)',
+                }}
+              >
+                {profile.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={profile.avatar} alt="avatar" className="w-full h-full object-cover" />
+                ) : (
+                  initials
+                )}
+              </div>
+
+              {/* Name */}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium truncate" style={{ color: 'var(--ui-text-1)' }}>
+                  {profile.displayName || session.user?.name || 'User'}
+                </p>
+              </div>
+
+              {/* Settings gear */}
               <button
-                onClick={() => setShowSettings((v) => !v)}
+                onClick={() => setShowSettings(true)}
                 className="p-1 rounded-lg transition-colors"
-                style={{ color: showSettings ? 'var(--ui-text-1)' : 'var(--ui-text-3)' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                style={{ color: 'var(--ui-text-3)' }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--ui-bg-card)';
+                  e.currentTarget.style.color = 'var(--ui-text-1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = 'var(--ui-text-3)';
+                }}
+                title="Settings"
               >
                 <Settings size={13} />
               </button>
-
-              {showSettings && (
-                <div
-                  className="absolute bottom-full right-0 mb-2 w-44 rounded-xl overflow-hidden z-40"
-                  style={{
-                    background: 'var(--ui-bg-sidebar)',
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
-                  }}
-                >
-                  <div className="p-1">
-                    <button
-                      onClick={toggle}
-                      className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-sm transition-colors"
-                      style={{ color: 'var(--ui-text-2)' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      <span>{isDark ? 'Light mode' : 'Dark mode'}</span>
-                      {isDark ? <Sun size={14} /> : <Moon size={14} />}
-                    </button>
-                    <div className="h-px mx-2 my-1" style={{ background: 'var(--ui-border)' }} />
-                    <button
-                      onClick={() => signOut({ callbackUrl: '/login' })}
-                      className="w-full flex items-center px-3 py-2.5 rounded-lg text-sm transition-colors text-red-400"
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'var(--ui-bg-card)';
-                        e.currentTarget.style.color = '#f87171';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.color = '#f87171';
-                      }}
-                    >
-                      Sign out
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
-          </div>
-        )}
-      </div>
-    </aside>
+          )}
+        </div>
+      </aside>
+
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+    </>
   );
 }
 

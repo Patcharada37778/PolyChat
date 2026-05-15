@@ -581,10 +581,18 @@ function MessageActions({ content, theme }: { content: string; theme: ProviderTh
       .replace(/\[(.+?)\]\(.+?\)/g, '$1')
       .trim();
     const utterance = new SpeechSynthesisUtterance(plain);
-    const detectedLang = detectScriptLang(plain) || navigator.languages?.[0] || navigator.language || 'en-US';
-    utterance.lang = detectedLang;
-    const voice = getVoiceForLang(detectedLang);
-    if (voice) utterance.voice = voice;
+    const storedURI = typeof window !== 'undefined' ? localStorage.getItem('aion_voice_uri') : null;
+    const allVoices = window.speechSynthesis.getVoices();
+    const storedVoice = storedURI ? allVoices.find((v) => v.voiceURI === storedURI) : null;
+    if (storedVoice) {
+      utterance.voice = storedVoice;
+      utterance.lang = storedVoice.lang;
+    } else {
+      const detectedLang = detectScriptLang(plain) || navigator.languages?.[0] || navigator.language || 'en-US';
+      utterance.lang = detectedLang;
+      const voice = getVoiceForLang(detectedLang);
+      if (voice) utterance.voice = voice;
+    }
     utterance.onend = () => setSpeaking(false);
     utterance.onerror = () => setSpeaking(false);
     window.speechSynthesis.speak(utterance);

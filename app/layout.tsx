@@ -4,7 +4,12 @@ import { Providers } from '@/components/Providers';
 
 export const metadata: Metadata = {
   title: 'AIon — AI in One Place',
-  description: 'Chat with multiple AI models including Claude Haiku, Sonnet, and Opus.',
+  description: 'Chat with multiple AI models in one place.',
+  icons: {
+    icon: '/aion-icon.svg',
+    shortcut: '/aion-icon.svg',
+    apple: '/aion-icon.svg',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

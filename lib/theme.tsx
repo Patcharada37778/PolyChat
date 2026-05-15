@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { initAccent } from '@/lib/accent';
 
 type ThemeMode = 'dark' | 'light';
 
@@ -69,6 +70,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const initial = (saved === 'light' || saved === 'dark') ? saved : 'dark';
     setMode(initial);
     applyVars(initial);
+    initAccent();
   }, []);
 
   useEffect(() => {
